@@ -1,0 +1,10 @@
+weblogo -f PSS_20nt_forWeblogo.fasta -o PSS_20nt_forWeblogo.pdf -F pdf -A 'dna' -c "classic" -s large --ylabel "Bits" --annotate "-20,-19,-18, -17, -16, -15, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, +1" --xlabel "Distance to Processing Site (nt)" --composition 0.474 -S 1
+
+weblogo -f TSS_overlapping_20nt_forWeblogo.fasta -o TSS_overlapping_20nt_forWeblogo.pdf -F pdf -A 'dna' -c "classic" -s large --ylabel "Bits" --annotate "-20,-19,-18, -17, -16, -15, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, +1" --xlabel "Distance to Transcriptional Start Site (nt)" --composition 0.474 -S 1
+
+weblogo -f TSS_not_overlapping_20nt_forWeblogo.fasta -o TSS_not_overlapping_20nt_forWeblogo.pdf -F pdf -A 'dna' -c "classic" -s large --ylabel "Bits" --annotate "-20,-19,-18, -17, -16, -15, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, +1" --xlabel "Distance to Transcriptional Start Site (nt)" --composition 0.474 -S 1
+
+weblogo -f allTSS_20nt_forWeblogo.fasta -o allTSS_20nt_forWeblogo.pdf -F pdf -A 'dna' -c "classic" -s large --ylabel "Bits" --annotate "-20,-19,-18, -17, -16, -15, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, +1" --xlabel "Distance to Transcriptional Start Site (nt)" --composition 0.474 -S 1
+
+weblogo -f PSS_10nt_forWeblogo_upAndDownstream.fasta -o PSS_10nt_forWeblogo_upAndDownstream.pdf -F pdf -A 'dna' -c "classic" -s large --ylabel "Bits" --annotate "-10,-9,-8, -7, -6, -5, -4, -3, -2, -1, +1, +2, +3, +4, +5, +6, +7, +8, +9, +10" --xlabel "Distance to Processing Site (nt)" --composition 0.474 -S 1
+

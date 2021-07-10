@@ -1,0 +1,881 @@
+---
+title: "Analyze transcript data of TIER-Seq data for Synechocystis RNase E"
+author:
+- affiliation: AG Annegret Wilde, Institute of Biology III
+  name: "Ute Hoffmann"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    fig_width: 15
+    fig_height: 8
+    theme: united
+    toc: yes
+    number_sections: true
+  pdf_document:
+    toc: yes
+    number_sections: true
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+require("knitr")
+opts_knit$set(root.dir = "/data/Dokumente/uni/Doktorarbeit/20201010_TIER-Seq_Data/00_Manuscript/Code_final/3_Analysis_Transcript/")
+library(DESeq2)
+library(ggplot2)
+library(ggrepel)
+library(ggpubr)
+library(pheatmap)
+library(RColorBrewer)
+library(clusterProfiler)
+library(enrichplot)
+library(rtracklayer)
+library(tidyverse)
+```
+
+```{r define-functions, echo=FALSE}
+# some functions which are incredibly handy
+
+## functions to analyze DESeq2 results object, create diagnostic plots
+
+count_up_down <- function(deseq2_dframe, foldchange=1, padjusted=0.01)
+{
+  deseq2_dframe <- subset(deseq2_dframe, !is.na(deseq2_dframe$padj))
+  # create vectors of down- or upregulated features, give out their numbers
+  down <- deseq2_dframe$log2FoldChange < -foldchange & deseq2_dframe$padj < padjusted
+  up <- deseq2_dframe$log2FoldChange > foldchange & deseq2_dframe$padj < padjusted
+  
+  print(paste("number of features down: ", sum(down)))
+  print(paste("number of features up: ", sum(up)))
+}
+
+return_up_down <- function(deseq2_dframe, foldchange=1, padjusted=0.01)
+{
+  deseq2_dframe <- subset(deseq2_dframe, !is.na(deseq2_dframe$padj))
+  # create vectors of down- or upregulated features, give out their numbers
+  down <- deseq2_dframe$log2FoldChange < -foldchange & deseq2_dframe$padj < padjusted
+  up <- deseq2_dframe$log2FoldChange > foldchange & deseq2_dframe$padj < padjusted
+  
+  vector_differentiallyExpressed <- c(row.names(deseq2_dframe)[down],row.names(deseq2_dframe)[up])
+  return(vector_differentiallyExpressed)
+}
+
+volcanoPlot_ggplot <-  function(deseq2_dframe, foldchange=1, padjusted=0.01, color=TRUE, text=FALSE, numbers=TRUE, lines_padj_FC=TRUE)
+{
+  # compare: https://biocorecrg.github.io/CRG_RIntroduction/volcano-plots.html
+  
+  # The significantly differentially expressed genes are the ones found in the upper-left and upper-right corners.
+  # Add a column to the data frame to specify if they are UP- or DOWN- regulated (log2FoldChange respectively positive or negative)
+  
+  # add a column of NAs
+  df_copy <- as.data.frame(deseq2_dframe)
+  df_copy$diffexpressed <- "NO"
+  # if log2Foldchange > 0.6 and pvalue < 0.05, set as "UP" 
+  df_copy$diffexpressed[df_copy$log2FoldChange > foldchange & df_copy$padj < padjusted] <- "UP"
+  # if log2Foldchange < -0.6 and pvalue < 0.05, set as "DOWN"
+  df_copy$diffexpressed[df_copy$log2FoldChange < -foldchange & df_copy$padj < padjusted] <- "DOWN"
+  
+  # prepare labels of plot
+  df_copy$delabel <- NA
+  df_copy$delabel[df_copy$diffexpressed != "NO"] <- row.names(df_copy)[df_copy$diffexpressed != "NO"]
+  
+  # Plot
+  p <- ggplot(data=df_copy, aes(x=log2FoldChange, y=-log10(padj), col=diffexpressed, label=delabel)) + geom_point(alpha=0.3, show.legend = FALSE) + 
+    theme_light() + labs(y="-Log10(p.adj_BH)", x="Log2FC") + theme(legend.position = "none")
+  
+  # color points
+  mycolors <- c("#e69f00b2","#005a96b2",  "#d3d3d3b2")
+  names(mycolors) <- c("DOWN", "UP", "NO")
+  p <- p + scale_colour_manual(values = mycolors)
+  
+  # Add vertical lines for log2FoldChange thresholds, and one horizontal line for the p-value threshold 
+  if(lines_padj_FC){
+    p <- p + geom_vline(xintercept=c(-foldchange, foldchange), linetype="dotted") +
+      geom_hline(yintercept=-log10(padjusted), linetype="dotted") # http://www.sthda.com/english/wiki/ggplot2-line-types-how-to-change-line-types-of-a-graph-in-r-software
+  }
+  
+  # Now write down the name of genes beside the points...
+  # Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+  if(text){
+    p <- p + geom_text_repel(fontface="italic")   #geom_text()
+  }
+  
+  return(p)
+  
+}
+
+MAplot_ggplot <-  function(deseq2_dframe, foldchange=1, padjusted=0.05, color=TRUE, text=FALSE, numbers=TRUE, lines_padj_FC=TRUE, y_axis_label="Log2FC")
+{
+  # add a column of NAs
+  df_copy <- as.data.frame(deseq2_dframe)
+  df_copy$diffexpressed <- "NO"
+  # if log2Foldchange > 0 and pvalue < 0.05, set as "UP" 
+  df_copy$diffexpressed[df_copy$log2FoldChange > 0 & df_copy$padj < padjusted] <- "UP"
+  # if log2Foldchange < 0 and pvalue < 0.05, set as "DOWN"
+  df_copy$diffexpressed[df_copy$log2FoldChange < 0 & df_copy$padj < padjusted] <- "DOWN"
+  
+  # prepare labels of plot
+  df_copy$delabel <- NA
+  df_copy$delabel[df_copy$diffexpressed != "NO"] <- row.names(df_copy)[df_copy$diffexpressed != "NO"]
+  
+  # Plot
+  p <- ggplot(data=df_copy, aes(x=baseMean, y=log2FoldChange, col=diffexpressed, label=delabel)) + geom_point(size=0.5, show.legend = FALSE) + 
+    theme_light() + labs(y=y_axis_label, x="Mean of Normalized Counts") + theme(legend.position = "none") + scale_x_continuous(trans='log10')
+  
+  # color points
+  mycolors <- c("#e69f00ff","#005a96ff",  "#d3d3d3ff")
+  names(mycolors) <- c("DOWN", "UP", "NO")
+  p <- p + scale_colour_manual(values = mycolors)
+  
+  # Add vertical lines for log2FoldChange thresholds, and one horizontal line for the p-value threshold 
+  if(lines_padj_FC){
+    p <- p + geom_hline(yintercept=c(-foldchange, 0, foldchange), linetype="dotted")
+  }
+  
+  # Now write down the name of genes beside the points...
+  # Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+  if(text){
+    p <- p + geom_text_repel(fontface="italic")   #geom_text()
+  }
+  
+  return(p)
+}
+
+PCA_plot <- function(dds, title){
+  rld <- rlog(dds)
+  pcaData <- plotPCA(rld, intgroup=c("strain", "treatment"), returnData=TRUE)
+  percentVar <- round(100 * attr(pcaData, "percentVar"))
+  ggplot(pcaData, aes(PC1, PC2, color=strain, shape=treatment)) +
+    geom_point(size=3) +
+    xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+    ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+    coord_fixed() + theme_light() + scale_color_manual(name="Strain", values=c("#005a96ff", "#e69f00ff"), breaks=c("dWT", "dIF"), labels=c("rne(WT)", "rne(Ts)")) + 
+    theme(legend.position="bottom", legend.box="vertical", legend.margin=margin(t=-0.2, r=0, b=0, l=0, unit="cm"))  + 
+    labs(title=title) + scale_shape_discrete(name="Heat", breaks=c("0h", "1h"), labels=c("0h", "1h"))
+}
+
+heatmap_plot <- function(dds, title){
+  dat <- assay(rlog(dds))
+  dists_rl <- dist(t(dat))
+  mat <- as.matrix(dists_rl)
+  rownames(mat) <- c(rep(c("rne(Ts) 0h", "rne(Ts) 1h"), 3),rep(c("rne(WT) 0h", "rne(WT) 1h"), 3))
+  colnames(mat) <- NULL
+  colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+  pheatmap(
+    mat,
+    clustering_distance_rows = dists_rl,
+    clustering_distance_cols = dists_rl,
+    col = colors,
+    main = "Sample-to-sample distances"
+  )
+}
+
+pvaluePlot <- function(result_object, title_plot){ 
+  use <- result_object$baseMean > metadata(result_object)$filterThreshold
+  h1 <- hist(result_object$pvalue[!use], breaks=0:50/50, plot=FALSE)
+  h2 <- hist(result_object$pvalue[use], breaks=0:50/50, plot=FALSE)
+  colori <- c(`filtered (low count)`="khaki", `not filtered`="powderblue")
+  barplot(height = rbind(h1$counts, h2$counts), beside = FALSE,
+        col = colori, space = 0, main = paste("Histogram of p-values for", title_plot), ylab="Frequency", xlab="P-values")
+  text(x = c(0, length(h1$counts)), y = 0, label = paste(c(0,1)),
+     adj = c(0.5,1.7), xpd=NA)
+  legend("topright", fill=rev(colori), legend=rev(names(colori)))
+}
+
+
+  browseKEGGNew_3 <- function (x, pathID, cluster_number) 
+{
+  url <- paste0("http://www.kegg.jp/kegg-bin/show_pathway?", 
+                pathID, "/", x[cluster_number][11])
+  browseURL(url)
+  invisible(url)
+}
+
+### code functional enrichment function
+  
+# read in term_to_gene and term_to_name for enricher()
+term_to_gene <- read.table("input/20200113_locusTags_GOterms.tsv", sep="\t", header=T)
+tmp <- term_to_gene[,2]
+tmp2 <- term_to_gene[,1]
+term_to_gene[,1] <- tmp
+term_to_gene[,2] <- tmp2
+names(term_to_gene) <- c("GO_ID", "locus_tag")
+
+term_to_name <- read.delim("input/term_to_name.csv", sep="\t", header=T)
+
+go_functional_enrichment <- function(DESeq2_dataframe, foldchange=0.8, padjusted=0.05, write=FALSE, path_up="", path_down=""){
+  DESEq2_dataframe <- as.data.frame(DESeq2_dataframe)
+  locus_tags <- row.names(DESEq2_dataframe)
+  
+  down <- DESEq2_dataframe$log2FoldChange < -foldchange & DESEq2_dataframe$padj < padjusted
+  up <- DESEq2_dataframe$log2FoldChange > foldchange & DESEq2_dataframe$padj < padjusted
+  
+  ego_up <- enricher(locus_tags[up], universe=locus_tags, TERM2GENE = term_to_gene, TERM2NAME=term_to_name)
+  print(head(ego_up))
+  
+  if(write){
+    write.csv(ego_up, path_up)
+  }
+  
+  ego_down <- enricher(locus_tags[down], universe=locus_tags, TERM2GENE = term_to_gene, TERM2NAME=term_to_name)
+  print(head(ego_down))
+ 
+  if(write){
+    write.csv(ego_down, path_down)
+  }
+}
+
+kegg_functional_enrichment <- function(DESEq2_dataframe, foldchange=0.8, padjusted=0.05, write=FALSE, path_up="", path_down=""){
+  locus_tags <- row.names(DESEq2_dataframe)
+  
+  down <- DESEq2_dataframe$log2FoldChange < -foldchange & DESEq2_dataframe$padj < padjusted
+  up <- DESEq2_dataframe$log2FoldChange > foldchange & DESEq2_dataframe$padj < padjusted
+  
+  ekeggup <- enrichKEGG(gene         = locus_tags[up],
+                               universe      = locus_tags,
+                               organism     = 'syn',
+                               pAdjustMethod = "BH",
+                               pvalueCutoff  = 0.01,
+                               qvalueCutoff  = 0.05)
+  print(head(ekeggup))
+  
+  if(write){
+    write.csv(ekeggup, path_up)
+  }
+  
+  ekeggdown <- enrichKEGG(gene         = locus_tags[down],
+                                 universe      = locus_tags,
+                                 organism     = 'syn',
+                                 pAdjustMethod = "BH",
+                                 pvalueCutoff  = 0.01,
+                                 qvalueCutoff  = 0.05)
+  print(head(ekeggdown))
+  
+  if(write){
+    write.csv(ekeggdown, path_down)
+  }
+}
+
+# gsea
+
+go_gsea <- function(DESEq2_dataframe, write=FALSE, path=""){
+  locus_tags <- row.names(DESEq2_dataframe)
+  geneList <- DESEq2_dataframe$log2FoldChange
+  names(geneList) <- locus_tags
+  geneList = sort(geneList, decreasing = TRUE)
+  
+  set.seed(42)
+  go_gsea_object <- GSEA(geneList, TERM2GENE = term_to_gene, TERM2NAME=term_to_name, seed=TRUE)
+  print(head(go_gsea_object)[,1:10])
+  
+  if(write){
+    write.csv(go_gsea_object, path)
+  }
+  return(go_gsea_object)
+}
+
+kegg_gsea <- function(DESEq2_dataframe, write=FALSE, path=""){
+  locus_tags <- row.names(DESEq2_dataframe)
+  geneList <- DESEq2_dataframe$log2FoldChange
+  names(geneList) <- locus_tags
+  geneList = sort(geneList, decreasing = TRUE)
+  
+  set.seed(42)
+  kegg_gsea_object <- gseKEGG(geneList, organism="syn", minGSSize=10, pvalueCutoff = 0.05, seed=TRUE)
+  tryCatch({
+    print(head(kegg_gsea_object)[,1:10])
+  
+  if(write){
+    write.csv(kegg_gsea_object, path)
+  }
+  return(kegg_gsea_object)}, error=function(e){
+    print("nothing enriched")
+  })
+}
+
+```
+
+# Aim of the analysis
+
+Analyze transcript level data from TIER-Seq comparison and do some exploratory data analysis.
+
+# DESeq2 analysis
+
+Read in data: htseq-count files created with usegalaxy.eu
+
+```{r read-input}
+htseq_CDS <- read.delim("input/Galaxy129-[Column_Join_on_data_115,_data_123,_and_others].tabular", header=TRUE, row.names=1)
+htseq_TUs <- read.delim("input/Galaxy158-[Column_Join_on_data_146,_data_147,_and_others].tabular", header=TRUE, row.names=1)
+zuordnung <- read.delim("input/20210114_zuordnungIn_20210114_transcript-history.csv", header=TRUE)
+row.names(zuordnung) <- names(htseq_CDS)[c(5,1,6,2,4,3,10,7,11,8,12,9)]
+names(htseq_CDS) <- zuordnung[names(htseq_CDS),]$name
+names(htseq_TUs) <- zuordnung[names(htseq_TUs),]$name
+coldata <- read.csv("input/20210125_colData.csv", row.names=1)
+```
+
+Do actual analysis
+
+```{r do-analysis}
+# create DESeq2 data object
+ddsMat_CDS <- DESeqDataSetFromMatrix(countData = htseq_CDS,
+                                 colData = coldata[names(htseq_CDS),],
+                                 design = ~ condition)
+ddsMat_TUs <- DESeqDataSetFromMatrix(countData = htseq_TUs,
+                                 colData = coldata[names(htseq_TUs),],
+                                 design = ~ condition)
+
+# run DESeq
+ddsMat_CDS <- DESeq(ddsMat_CDS) 
+ddsMat_TUs <- DESeq(ddsMat_TUs) 
+
+write.csv(data.frame(factor=ddsMat_CDS$sizeFactor), file="output/transcript_sizeFactors.csv")
+write.csv(data.frame(counts(ddsMat_CDS, normalized=TRUE)), file="output/Transcript_CDS_normalizedCounts.csv")
+```
+
+## Diagnostic Plots
+
+```{r diagnostic-plots}
+plotDispEsts(ddsMat_CDS, main="CDS comparison", xlab="Mean of Normalized Counts", ylab="Dispersion")
+plotDispEsts(ddsMat_TUs, main="TU comparison", xlab="Mean of Normalized Counts", ylab="Dispersion")
+pdf(file="output/DESeq2_Plots/CDS/ddsMat_CDS_DispEsts.pdf", width=4.5, height=4.5)
+plotDispEsts(ddsMat_CDS, main="CDS comparison", xlab="Mean of Normalized Counts", ylab="Dispersion")
+dev.off()
+pdf(file="output/DESeq2_Plots/TU/ddsMat_TU_DispEsts.pdf", width=4.5, height=4.5)
+plotDispEsts(ddsMat_TUs, main="TU comparison", xlab="Mean of Normalized Counts", ylab="Dispersion")
+dev.off()
+
+p <- PCA_plot(ddsMat_CDS, "RNA Features")
+p 
+ggsave("output/DESeq2_Plots/CDS/ddsMat_CDS_PCA.pdf", plot=p, width=9, height=9, units="cm")
+
+p <- PCA_plot(ddsMat_TUs, "TU")
+p
+ggsave("output/DESeq2_Plots/TU/ddsMat_TU_PCA.pdf", plot=p, width=9, height=9, units="cm")
+
+p <- heatmap_plot(ddsMat_CDS, "RNA Features")
+p
+ggsave("output/DESeq2_Plots/CDS/ddsMat_CDS_heatMap.pdf", plot=p, width=15, height=12, units="cm")
+
+p <- heatmap_plot(ddsMat_TUs, "TU")
+p
+ggsave("output/DESeq2_Plots/TU/ddsMat_TU_heatMap.pdf", plot=p, width=15, height=12, units="cm")
+```
+
+## Extract Results
+
+Extract results and use changeAnnotation_DESeq2.py and annotation_locusTags_stand13012021.csv to add annotation to tables.
+
+```{r extract-results}
+# extract results
+CDS_result_dWT_dIF_1h <- results(ddsMat_CDS, contrast=c("condition", "dWT_1h", "dIF_1h")) # dWT/dIF -> higher in dWT: higher log2FC
+write_tsv(rownames_to_column(as.data.frame(CDS_result_dWT_dIF_1h[order(CDS_result_dWT_dIF_1h$padj),])), file="output/DESeq2_resultsTables/results_CDS-1h.tsv")
+
+CDS_result_dWT_dIF_0h <- results(ddsMat_CDS, contrast=c("condition", "dWT_0h", "dIF_0h")) # dWT/dIF -> higher in dWT: higher log2FC
+write_tsv(rownames_to_column(as.data.frame(CDS_result_dWT_dIF_0h[order(CDS_result_dWT_dIF_0h$padj),])), file="output/DESeq2_resultsTables/results_CDS-0h.tsv")
+
+CDS_result_dWT <- results(ddsMat_CDS, contrast=c("condition", "dWT_1h", "dWT_0h")) # dWT 1h/0h -> higher in 1h: higher log2FC
+write_tsv(rownames_to_column(as.data.frame(CDS_result_dWT[order(CDS_result_dWT$padj),])), file="output/DESeq2_resultsTables/results_CDS_dWT.tsv")
+
+CDS_result_dIF <- results(ddsMat_CDS, contrast=c("condition", "dIF_1h", "dIF_0h")) # dIF 1h/0h -> higher in 1h: higher log2FC
+write_tsv(rownames_to_column(as.data.frame(CDS_result_dIF[order(CDS_result_dIF$padj),])), file="output/DESeq2_resultsTables/results_CDS_dIF.tsv")
+
+TUs_result_dWT_dIF_1h <- results(ddsMat_TUs, contrast=c("condition", "dWT_1h", "dIF_1h")) # dWT/dIF -> higher in dWT: higher log2FC
+write_tsv(rownames_to_column(as.data.frame(TUs_result_dWT_dIF_1h[order(TUs_result_dWT_dIF_1h$padj),])), file="output/DESeq2_resultsTables/results_TUs-1h.tsv")
+
+TUs_result_dWT_dIF_0h <- results(ddsMat_TUs, contrast=c("condition", "dWT_0h", "dIF_0h")) # dWT/dIF -> higher in dWT: higher log2FC
+write_tsv(rownames_to_column(as.data.frame(TUs_result_dWT_dIF_0h[order(TUs_result_dWT_dIF_0h$padj),])), file="output/DESeq2_resultsTables/results_TUs-0h.tsv")
+
+TUs_result_dWT <- results(ddsMat_TUs, contrast=c("condition", "dWT_1h", "dWT_0h")) # dWT 1h/0h -> higher in 1h: higher log2FC
+write_tsv(rownames_to_column(as.data.frame(TUs_result_dWT[order(TUs_result_dWT$padj),])), file="output/DESeq2_resultsTables/results_TUs_dWT.tsv")
+
+TUs_result_dIF <- results(ddsMat_TUs, contrast=c("condition", "dIF_1h", "dIF_0h")) # dIF 1h/0h -> higher in 1h: higher log2FC
+write_tsv(rownames_to_column(as.data.frame(TUs_result_dIF[order(TUs_result_dIF$padj),])), file="output/DESeq2_resultsTables/results_TUs_dIF.tsv")
+```
+
+Execute in directory "DESeq2_resultsTables":
+python changeAnnotation_DESeq2.py  results_CDS-1h.tsv results_CDS-1h_annotated.tsv
+python changeAnnotation_DESeq2.py  results_CDS-0h.tsv results_CDS-0h_annotated.tsv
+python changeAnnotation_DESeq2.py  results_CDS_dWT.tsv results_CDS-dWT_annotated.tsv
+python changeAnnotation_DESeq2.py  results_CDS_dIF.tsv results_CDS-dIF_annotated.tsv
+
+python TUs_add_info.py  results_TUs-1h.tsv results_TUs-1h_annotated.tsv
+python TUs_add_info.py  results_TUs-0h.tsv results_TUs-0h_annotated.tsv
+python TUs_add_info.py  results_TUs_dWT.tsv results_TUs-dWT_annotated.tsv
+python TUs_add_info.py  results_TUs_dIF.tsv results_TUs-dIF_annotated.tsv
+
+## p-Value plots for different comparisons
+
+```{r pvalue-plots, fig.wide = TRUE}
+pvaluePlot(CDS_result_dWT_dIF_0h, "CDS 0h")
+pvaluePlot(CDS_result_dWT_dIF_1h, "CDS 1h")
+pvaluePlot(CDS_result_dWT, "CDS dWT")
+pvaluePlot(CDS_result_dIF, "CDS dIF")
+pvaluePlot(TUs_result_dWT_dIF_0h, "TUs 0h")
+pvaluePlot(TUs_result_dWT_dIF_1h, "TUs 1h")
+pvaluePlot(TUs_result_dWT, "TUs dWT")
+pvaluePlot(TUs_result_dIF, "TUs dIF")
+```
+```{r pvalue-plots-2, echo=FALSE}
+pdf(file="output/DESeq2_Plots/CDS/ddsMat_CDS-0h_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(CDS_result_dWT_dIF_0h, "CDS 0h")
+dev.off()
+pdf(file="output/DESeq2_Plots/CDS/ddsMat_CDS-1h_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(CDS_result_dWT_dIF_1h, "CDS 1h")
+dev.off()
+pdf(file="output/DESeq2_Plots/CDS/ddsMat_CDS-dWT_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(CDS_result_dWT, "CDS dWT")
+dev.off()
+pdf(file="output/DESeq2_Plots/CDS/ddsMat_CDS-dIF_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(CDS_result_dIF, "CDS dIF")
+dev.off()
+
+pdf(file="output/DESeq2_Plots/TU/ddsMat_TUs-0h_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(TUs_result_dWT_dIF_0h, "TUs 0h")
+dev.off()
+pdf(file="output/DESeq2_Plots/TU/ddsMat_TUs-1h_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(TUs_result_dWT_dIF_1h, "TUs 1h")
+dev.off()
+pdf(file="output/DESeq2_Plots/TU/ddsMat_TUs-dWT_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(TUs_result_dWT_dIF_0h, "TUs dWT")
+dev.off()
+pdf(file="output/DESeq2_Plots/TU/ddsMat_TUs-dIF_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(TUs_result_dWT_dIF_1h, "TUs dIF")
+dev.off()
+```
+
+## Filter for non-NA values
+
+```{r}
+CDS_result_dWT_dIF_0h <- subset(CDS_result_dWT_dIF_0h, !is.na(CDS_result_dWT_dIF_0h$padj))
+nrow(CDS_result_dWT_dIF_0h)
+
+CDS_result_dWT_dIF_1h <- subset(CDS_result_dWT_dIF_1h, !is.na(CDS_result_dWT_dIF_1h$padj))
+nrow(CDS_result_dWT_dIF_1h)
+
+CDS_result_dWT <- subset(CDS_result_dWT, !is.na(CDS_result_dWT$padj))
+nrow(CDS_result_dWT)
+
+CDS_result_dIF <- subset(CDS_result_dIF, !is.na(CDS_result_dIF$padj))
+nrow(CDS_result_dIF)
+
+TUs_result_dWT_dIF_0h <- subset(TUs_result_dWT_dIF_0h, !is.na(TUs_result_dWT_dIF_0h$padj))
+nrow(TUs_result_dWT_dIF_0h)
+
+TUs_result_dWT_dIF_1h <- subset(TUs_result_dWT_dIF_1h, !is.na(TUs_result_dWT_dIF_1h$padj))
+nrow(TUs_result_dWT_dIF_1h)
+
+TUs_result_dWT <- subset(TUs_result_dWT, !is.na(TUs_result_dWT$padj))
+nrow(TUs_result_dWT)
+
+TUs_result_dIF <- subset(TUs_result_dIF, !is.na(TUs_result_dIF$padj))
+nrow(TUs_result_dIF)
+```
+
+## Create MA and Volcano plots for different comparisons, count features up-, downregulated
+
+### CDS
+
+#### CDS 0h 
+```{r, fig.wide = TRUE}
+count_up_down(CDS_result_dWT_dIF_0h, foldchange=0.8, padjusted=0.05)
+
+p <- volcanoPlot_ggplot(as.data.frame(CDS_result_dWT_dIF_0h), foldchange=0.8, padjusted=0.05, text=TRUE)
+p
+ggsave("output/DESeq2_Plots/CDS/ddsMat_CDS-0h_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+p <- MAplot_ggplot(CDS_result_dWT_dIF_0h, foldchange=0.8, y_axis_label = "Log2 fold-change(rne(WT)/rne(Ts))") + ylim(-5.5,+5.5)
+p
+ggsave("output/DESeq2_Plots/CDS/ddsMat_CDS-0h_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+#### CDS 1h
+```{r, fig.wide = TRUE}
+count_up_down(CDS_result_dWT_dIF_1h, foldchange=0.8, padjusted=0.05)
+
+p <- volcanoPlot_ggplot(as.data.frame(CDS_result_dWT_dIF_1h), foldchange=0.8, padjusted=0.05, text=TRUE)
+p
+ggsave("output/DESeq2_Plots/CDS/ddsMat_CDS-1h_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+p <- MAplot_ggplot(CDS_result_dWT_dIF_1h, foldchange=0.8, y_axis_label = "Log2 fold-change(rne(WT)/rne(Ts))") + ylim(-5.5,+5.5)
+p
+ggsave("output/DESeq2_Plots/CDS/ddsMat_CDS-1h_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+#### CDS dWT
+```{r, fig.wide = TRUE}
+count_up_down(CDS_result_dWT, foldchange=0.8, padjusted=0.05)
+
+p <- volcanoPlot_ggplot(as.data.frame(CDS_result_dWT), foldchange=0.8, padjusted=0.05, text=TRUE)
+p
+ggsave("output/DESeq2_Plots/CDS/ddsMat_CDS-dWT_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+p <- MAplot_ggplot(CDS_result_dWT, foldchange=0.8, y_axis_label = "Log2 fold-change(rne(WT) 1h / 0h)") + ylim(-5.5,+5.5) + scale_colour_manual(values=c("DOWN"="black", "UP"="black", "NO"="#d3d3d3ff"))
+p
+ggsave("output/DESeq2_Plots/CDS/ddsMat_CDS-dWT_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+#### CDS dIF
+```{r, fig.wide = TRUE}
+count_up_down(CDS_result_dIF, foldchange=0.8, padjusted=0.05)
+
+p <- volcanoPlot_ggplot(as.data.frame(CDS_result_dIF), foldchange=0.8, padjusted=0.05, text=TRUE)
+p
+ggsave("output/DESeq2_Plots/CDS/ddsMat_CDS-dIF_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+p <- MAplot_ggplot(CDS_result_dIF, foldchange=0.8, y_axis_label = "Log2 fold-change(Rne-Ts 1h / 0h)") #+ ylim(-5,+5)
+p
+ggsave("output/DESeq2_Plots/CDS/ddsMat_CDS-dIF_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+### TUs
+
+#### TUs 0h
+```{r, fig.wide = TRUE}
+count_up_down(TUs_result_dWT_dIF_0h, foldchange=0.8, padjusted=0.05)
+p <- volcanoPlot_ggplot(as.data.frame(TUs_result_dWT_dIF_0h), foldchange=0.8, padjusted=0.05)
+p
+ggsave("output/DESeq2_Plots/TU/ddsMat_TUs-0h_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+DESeq2::plotMA(TUs_result_dWT_dIF_0h)
+abline(h=c(-0.8,+0.8), col="dodgerblue", lwd=2)
+
+pdf(file="output/DESeq2_Plots/TU/ddsMat_TUs-0h_MAplot.pdf", width=4.5, height=4.5)
+DESeq2::plotMA(TUs_result_dWT_dIF_0h, xlab="Mean of Normalized Counts", ylab="Log2FC(rne-OE/rne-ts)")
+abline(h=c(-0.8,+0.8), col="dodgerblue", lwd=2)
+dev.off()
+```
+
+#### TUs 1h 
+```{r, fig.wide = TRUE}
+count_up_down(TUs_result_dWT_dIF_1h, foldchange=0.8, padjusted=0.05)
+p <- volcanoPlot_ggplot(as.data.frame(TUs_result_dWT_dIF_1h), foldchange=0.8, padjusted=0.05)
+p
+ggsave("output/DESeq2_Plots/TU/ddsMat_TUs-1h_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+DESeq2::plotMA(TUs_result_dWT_dIF_1h)
+abline(h=c(-0.8,+0.8), col="dodgerblue", lwd=2)
+
+pdf(file="output/DESeq2_Plots/TU/ddsMat_TUs-1h_MAplot.pdf", width=4.5, height=4.5)
+DESeq2::plotMA(TUs_result_dWT_dIF_1h, xlab="Mean of Normalized Counts", ylab="Log2FC(rne-OE/rne-ts)")
+abline(h=c(-0.8,+0.8), col="dodgerblue", lwd=2)
+dev.off()
+```
+
+#### TUs dWT
+```{r, fig.wide = TRUE}
+count_up_down(TUs_result_dWT, foldchange=0.8, padjusted=0.05)
+p <- volcanoPlot_ggplot(as.data.frame(TUs_result_dWT), foldchange=0.8, padjusted=0.05)
+p
+ggsave("output/DESeq2_Plots/TU/ddsMat_TUs-dWT_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+DESeq2::plotMA(TUs_result_dWT)
+abline(h=c(-0.8,+0.8), col="dodgerblue", lwd=2)
+
+pdf(file="output/DESeq2_Plots/TU/ddsMat_TUs-dWT_MAplot.pdf", width=4.5, height=4.5)
+DESeq2::plotMA(TUs_result_dWT, xlab="Mean of Normalized Counts", ylab="Log2FC(rne-OE/rne-ts)")
+abline(h=c(-0.8,+0.8), col="dodgerblue", lwd=2)
+dev.off()
+```
+
+#### TUs dIF
+```{r, fig.wide = TRUE}
+count_up_down(TUs_result_dIF, foldchange=0.8, padjusted=0.05)
+p <- volcanoPlot_ggplot(as.data.frame(TUs_result_dIF), foldchange=0.8, padjusted=0.05)
+p
+ggsave("output/DESeq2_Plots/TU/ddsMat_TUs-dIF_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+DESeq2::plotMA(TUs_result_dIF)
+abline(h=c(-0.8,+0.8), col="dodgerblue", lwd=2)
+
+pdf(file="output/DESeq2_Plots/TU/ddsMat_TUs-dIF_MAplot.pdf", width=4.5, height=4.5)
+DESeq2::plotMA(TUs_result_dIF, xlab="Mean of Normalized Counts", ylab="Log2FC(rne-OE/rne-ts)")
+abline(h=c(-0.8,+0.8), col="dodgerblue", lwd=2)
+dev.off()
+```
+
+```{r save-image, echo=FALSE}
+save.image(file = "DESeq2_analyses_CDS_TUs.RData")
+```
+
+```{r echo=FALSE}
+#load("DESeq2_analyses_CDS_TUs.RData")
+```
+
+# Exploratory Data Analysis
+
+## Create table how many RNA features of a certain type are affected by differential expression
+
+```{r}
+features <- rtracklayer::import("input/20210217_syne_onlyUnique_withFeat.gff3")
+CDS_features <- subset(features, features$type=="CDS")
+TUs <- rtracklayer::import("input/Kopf_4091_TUs_combined.gff3")
+
+types <- rep(c("CDS","5UTR", "3UTR", "tRNA", "rRNA", "ncRNA", "asRNA", "CRISPR", "misc"),2)
+updown <- c(rep("up",9), rep("down",9))
+df_features <- data.frame(cbind(type=types, updown=updown))
+
+types <- c("CDS","5UTR", "3UTR", "tRNA", "rRNA", "ncRNA", "asRNA", "CRISPR", "misc")
+for(t in types){
+  t_feat <- subset(features, features$type==t)
+  
+  subset_CDS <- subset(CDS_result_dWT, row.names(CDS_result_dWT) %in% t_feat$locus_tag)
+  
+  index_up <- which(df_features$type==t & df_features$updown=="up")
+  index_down <- which(df_features$type==t & df_features$updown=="down") 
+  
+  df_features[index_up,"number_feat_overlap"] <- nrow(subset(subset_CDS, subset_CDS$padj<0.05 & subset_CDS$log2FoldChange>0.8)) # count number of features affected
+  df_features[index_down,"number_feat_overlap"] <- nrow(subset(subset_CDS, subset_CDS$padj<0.05 & subset_CDS$log2FoldChange<(-0.8))) # count number of features affected
+  
+  df_features[df_features$type==t,"number_total"] <- length(t_feat)
+} 
+
+df_features
+write.csv(df_features, file="output/RNAfeatures_upDown_dWT_0h1hheat.csv")
+```
+```{r}
+# prepare data.frame for barplot
+types <- rep(c("CDS","5UTR", "3UTR", "tRNA", "rRNA", "ncRNA", "asRNA", "CRISPR", "misc"),2)
+updown <- c(rep("up",9), rep("down",9))
+df_features <- data.frame(cbind(type=types, updown=updown))
+
+types <- c("CDS","5UTR", "3UTR", "tRNA", "rRNA", "ncRNA", "asRNA", "CRISPR", "misc")
+for(t in types){
+  t_feat <- subset(features, features$type==t)
+  
+  subset_CDS <- subset(CDS_result_dWT_dIF_1h, row.names(CDS_result_dWT_dIF_1h) %in% t_feat$locus_tag)
+  
+  index_up <- which(df_features$type==t & df_features$updown=="up")
+  index_down <- which(df_features$type==t & df_features$updown=="down") 
+  
+  df_features[index_up,"number_feat_overlap"] <- nrow(subset(subset_CDS, subset_CDS$padj<0.05 & subset_CDS$log2FoldChange>0.8)) # count number of features affected
+  df_features[index_down,"number_feat_overlap"] <- nrow(subset(subset_CDS, subset_CDS$padj<0.05 & subset_CDS$log2FoldChange<(-0.8))) # count number of features affected
+  
+  df_features[df_features$type==t,"number_total"] <- length(t_feat)
+} 
+
+df_features
+write.csv(df_features, file="output/RNAfeatures_upDown_dWT_dIF_1hheat.csv")
+```
+
+## Functional Enrichment
+
+```{r functional-enrichment}
+go_functional_enrichment(CDS_result_dWT, write=TRUE, path_up="output/enrichment/go_enrichment/dWT_0h_1h_up.csv", path_down="output/enrichment/go_enrichment/dWT_0h_1h_down.csv")
+go_functional_enrichment(CDS_result_dIF, write=TRUE, path_up="output/enrichment/go_enrichment/dIF_0h_1h_up.csv", path_down="output/enrichment/go_enrichment/dIF_0h_1h_down.csv")
+go_functional_enrichment(CDS_result_dWT_dIF_0h, write=TRUE, path_up="output/enrichment/go_enrichment/dWT_dIF_0h_up.csv", path_down="output/enrichment/go_enrichment/dWT_dIF_0h_down.csv")
+go_functional_enrichment(CDS_result_dWT_dIF_1h, write=TRUE, path_up="output/enrichment/go_enrichment/dWT_dIF_1h_up.csv", path_down="output/enrichment/go_enrichment/dWT_dIF_1h_down.csv")
+
+kegg_functional_enrichment(CDS_result_dWT, write=TRUE, path_up="output/enrichment/kegg_enrichment/dWT_0h_1h_up.csv", path_down="output/enrichment/kegg_enrichment/dWT_0h_1h_down.csv")
+kegg_functional_enrichment(CDS_result_dIF, write=TRUE, path_up="output/enrichment/kegg_enrichment/dIF_0h_1h_up.csv", path_down="output/enrichment/kegg_enrichment/dIF_0h_1h_down.csv")
+kegg_functional_enrichment(CDS_result_dWT_dIF_0h, write=TRUE, path_up="output/enrichment/kegg_enrichment/dWT_dIF_0h_up.csv", path_down="output/enrichment/kegg_enrichment/dWT_dIF_0h_down.csv")
+kegg_functional_enrichment(CDS_result_dWT_dIF_1h, write=TRUE, path_up="output/enrichment/kegg_enrichment/dWT_dIF_1h_up.csv", path_down="output/enrichment/kegg_enrichment/dWT_dIF_1h_down.csv")
+```
+
+## Gene Set Enrichment Analyses
+
+```{r gsea}
+dWT_0h_1h_go_gsea <- go_gsea(CDS_result_dWT, write=TRUE, path="output/enrichment/go_gsea/dWT_0h_1h_go_gsea.csv")
+dIF_0h_1h_go_gsea <- go_gsea(CDS_result_dIF, write=TRUE, path="output/enrichment/go_gsea/dIF_0h_1h_go_gsea.csv")
+dWT_dIF_0h_go_gsea <- go_gsea(CDS_result_dWT_dIF_0h, write=TRUE, path="output/enrichment/go_gsea/dWT_dIF_0h_go_gsea.csv")
+dWT_dIF_1h_go_gsea <- go_gsea(CDS_result_dWT_dIF_1h, write=TRUE, path="output/enrichment/go_gsea/dWT_dIF_1h_go_gsea.csv")
+
+dWT_0h_1h_kegg_gsea <- kegg_gsea(CDS_result_dWT, write=TRUE, path="output/enrichment/kegg_gsea/dWT_0h_1h_kegg_gsea.csv")
+dIF_0h_1h_kegg_gsea <- kegg_gsea(CDS_result_dIF, write=TRUE, path="output/enrichment/kegg_gsea/dIF_0h_1h_kegg_gsea.csv")
+dWT_dIF_0h_kegg_gsea <- kegg_gsea(CDS_result_dWT_dIF_0h, write=TRUE, path="output/enrichment/kegg_gsea/dWT_dIF_0h_kegg_gsea.csv")
+dWT_dIF_1h_kegg_gsea <- kegg_gsea(CDS_result_dWT_dIF_1h, write=TRUE, path="output/enrichment/kegg_gsea/dWT_dIF_1h_kegg_gsea.csv")
+```
+
+## Plots of GSEA
+
+```{r}
+gseaplot2(dWT_0h_1h_go_gsea, geneSetID=1:6)
+
+p <- gseaplot2(dWT_0h_1h_kegg_gsea, geneSetID =1)
+p
+ggsave("output/enrichment/Plots/dWT_0h_1h_KEGG.pdf", plot=p, width=15, height=12, units="cm")
+```
+
+```{r}
+p <- gseaplot2(dIF_0h_1h_kegg_gsea, geneSetID =1:6)
+p
+ggsave("output/enrichment/Plots/dIF_0h_1h_KEGG.pdf", plot=p, width=15, height=12, units="cm")
+```
+
+```{r}
+browseKEGGNew_3(dIF_0h_1h_kegg_gsea, "syn00190", 1) # https://www.kegg.jp/kegg-bin/show_pathway?syn00190/sll0026/slr2083/sll0223/sll1899/sll1262/sll1327/slr1622/sll1223/slr1279/slr1329/slr1137/sll0027/sll1326/ssr1386/sll0519/slr0261/sll1322/slr1136/slr1623/slr1280/sll1324/ssl2615/sll1325/sll1323/sll0522/sll0520/slr1281/sll0521/sll1733/slr1291/sll1732
+browseKEGGNew_3(dIF_0h_1h_kegg_gsea, "syn00195", 2) # https://www.kegg.jp/kegg-bin/show_pathway?syn00195/sll1382/ssr0390/slr0343/sll0849/slr0342/sml0005/ssl2598/smr0005/slr0737/slr1645/slr1835/slr1643/smr0003/sll0819/sll1182/sll1327/slr1185/slr1834/smr0010/smr0004/sll1317/sll0427/smr0008/sll1796/slr1329/sll1316/slr1655/slr0906/sml0001/sll1326/slr1311/smr0006/smr0007/ssr3451/sll0629/slr1828/slr0927/sll1322/sll1324/ssl2615/sll1325/sll1323/sll1867/ssl0020/sll1398
+browseKEGGNew_3(dIF_0h_1h_kegg_gsea, "syn03010", 3) # https://www.kegg.jp/kegg-bin/show_pathway?syn03010/slr1356/slr1678/sll1800/sll1260/sll1822/sll1801/sll1096/sll1821/sll1799/sll1808/ssr1604/sll1824/sll1816/sll1802/ssr1398/sll1804/sll1813/sll1806/ssl1784/sll1097/sll1807/ssr1399/ssl3437/sll1809/ssl3432/ssr0482/sll1746/sll1812/sll1817/ssl3436/ssr1736/sll1803/sll1805/sll1811/sll1244/sll0767/ssl1426/sll1743/sll1740/sll1745/slr1984/smr0011
+browseKEGGNew_3(dIF_0h_1h_kegg_gsea, "syn00240", 4) # https://www.kegg.jp/kegg-bin/show_pathway?syn00240/sll1459/sll1108/slr1476/sll1635/slr1616/sll0144/slr1164/sll1258/sll0368/sll1035/sll1852/sll0370/slr0591
+browseKEGGNew_3(dIF_0h_1h_kegg_gsea, "syn01110", 5) # https://www.kegg.jp/kegg-bin/show_pathway?syn01110/sll0902/sll0329/sll1558/slr1022/slr0738/slr0186/slr1289/slr1898/slr0049/slr0506/slr1887/slr1019/slr1808/slr0886/sll1444/slr1790/slr1867/slr0879/slr1055/sll1127/sll1468/sll1185/slr1226/sll1538/sll1172/sll1688/slr2136/slr0444/slr0293/slr1737/sll0513/sll1994/sll1899/sll0179/sll0901/sll1459/sll1108/sll0033/slr2072/sll1479/slr1349/slr0585/slr2130/sll1056/sll1747/slr0526/slr1124/sll1349/sll0158/sll1908/slr1176/sll1363/sll1091/slr0018/slr1510/slr1096/sll0807/sll0421/sll0480/slr1165/sll1342/slr0657/slr1743/slr0611/slr0985/slr1934/slr0966/slr0940/slr0116/slr1736/sll1815/slr1842/sll1797/slr1517/slr2094/slr0394/slr1945/sll0373/slr1843/sll0735/slr2023/sll0418/slr1030/sll0422/sll0018/sll1214/slr0749/slr0348/slr0012/slr0009/sll1852/sll0927/slr0493/sll0019/ssl2084
+browseKEGGNew_3(dIF_0h_1h_kegg_gsea, "syn03070", 6) # https://www.kegg.jp/kegg-bin/show_pathway?syn03070/slr1471/sll1180/ssr3307/sll1814/sll1181/slr1531/sll0194/slr1046/sll0616/slr0774/slr0775/ssl2823/ssl3335
+
+
+browseKEGGNew_3(dWT_0h_1h_kegg_gsea, "syn00190", 1) # https://www.kegg.jp/kegg-bin/show_pathway?syn00190/sll1899/slr2082/sll0026/sll1262/sll1322/slr1622/sll1484/slr1136/sll1323/slr1137/ssl2615/slr1330/slr1623/sll1327/sll1326/sll1324/sll1325/slr0261/slr1279/sll0223/sll0519/slr1280/sll0521/sll0520/sll0522/slr1281/slr1291/sll1733/sll1732
+```
+
+```{r}
+p <- gseaplot2(dWT_dIF_1h_kegg_gsea, geneSetID=1:4)
+p
+ggsave("output/enrichment/Plots/dWT_dIF_1h_KEGG.pdf", plot=p, width=15, height=12, units="cm")
+
+p <- gseaplot2(dWT_dIF_1h_go_gsea, geneSetID=c(2,8,3))
+p
+ggsave("output/enrichment/Plots/dWT_dIF_1h_GO.pdf", plot=p, width=15, height=12, units="cm")
+
+p <- gseaplot2(dWT_dIF_1h_kegg_gsea, geneSetID=c(1,3,2,4))
+p
+ggsave("output/enrichment/Plots/dWT_dIF_1h_KEGG.pdf", plot=p, width=15, height=12, units="cm")
+```
+
+```{r}
+browseKEGGNew_3(dWT_dIF_1h_kegg_gsea, "syn00195", 1) # https://www.kegg.jp/kegg-bin/show_pathway?syn00195/smr0005/slr1655/smr0004/sll0629/slr1834/slr1835/ssr3451/sll1182/smr0007/smr0006/smr0008/slr1739/sml0008/sll1867/sll0427/slr0927/sml0001/sll1398/sll1323/sll1382/slr1311/ssl0020/smr0010/sml0002/slr0737/sll0819/sll1322/slr0150/ssl0563/sll1325/slr0906/sll0849/sll1324
+browseKEGGNew_3(dWT_dIF_1h_kegg_gsea, "syn03010", 2) # https://www.kegg.jp/kegg-bin/show_pathway?syn03010/sll1740/smr0011/slr1984/ssr0482/sll1811/sll1244/sll1743/ssl1784/ssr1604/sll1803/sll1812/ssl1426/sll1824/sll1813/sll1806/sll1807/ssr1736/ssl3437/sll1096/sll1805/ssl3432/sll1809/sll1810/ssl3436/sll1802/ssr1398/sll1804/slr1678/sll1799/ssr1399/sll1800/sll1808/sll1821/sll1097/sll1801/sll1260
+browseKEGGNew_3(dWT_dIF_1h_kegg_gsea, "syn00196", 3) # https://www.kegg.jp/kegg-bin/show_pathway?syn00196/slr1986/slr2067/sll1579/sll1580/ssr3383/ssl3093/slr2051/sll1577/sll1578/slr0335/sll0928
+browseKEGGNew_3(dWT_dIF_1h_kegg_gsea, "syn00790", 4) # https://www.kegg.jp/kegg-bin/show_pathway?syn00790/slr0527/slr1093/slr0078/slr0887/slr0900/slr0902/slr0901/slr0903
+```
+
+## GSEA for RNA features
+
+First, a data frame in which feature names are assigned to their feature type (CDS, ncRNA, ...) has to be created and the respective info read in.
+
+```{r}
+df_featureType <- as.data.frame(cbind(feature_type=as.character(features$type), feature_name=features$locus_tag))
+
+feature_type_gsea <- function(DESEq2_dataframe, write=FALSE, path=""){
+  locus_tags <- row.names(DESEq2_dataframe)
+  geneList <- DESEq2_dataframe$log2FoldChange
+  names(geneList) <- locus_tags
+  geneList = sort(geneList, decreasing = TRUE)
+  
+  set.seed(42)
+  go_gsea_object <- GSEA(geneList, TERM2GENE = df_featureType, seed=TRUE)
+  print(head(go_gsea_object)[,1:10])
+  
+  if(write){
+    write.csv(go_gsea_object, path)
+  }
+  return(go_gsea_object)
+}
+
+features_gsea_0h <- feature_type_gsea(CDS_result_dWT_dIF_0h, TRUE, "output/enrichment/GSEA_RNAfeatures_dWT-dIF_0h.csv")
+features_gsea_1h <- feature_type_gsea(CDS_result_dWT_dIF_1h, TRUE, "output/enrichment/GSEA_RNAfeatures_dWT-dIF_1h.csv")
+```
+
+```{r}
+p <- gseaplot2(features_gsea_0h, geneSetID=1:4)
+p
+```
+
+```{r}
+p <- gseaplot2(features_gsea_1h, geneSetID=1:2)
+p
+```
+
+## GSEA for base means
+
+```{r}
+go_gsea_baseMeans <- function(DESEq2_dataframe, write=FALSE, path=""){
+  locus_tags <- row.names(DESEq2_dataframe)
+  geneList <- DESEq2_dataframe$baseMean
+  names(geneList) <- locus_tags
+  geneList = sort(geneList, decreasing = TRUE)
+  
+  set.seed(42)
+  go_gsea_object <- GSEA(geneList, TERM2GENE = term_to_gene, TERM2NAME=term_to_name, seed=TRUE)
+  tryCatch({
+    print(head(go_gsea_object)[,1:10])
+  
+  if(write){
+    write.csv(go_gsea_object, path)
+  }
+  return(go_gsea_object)}, error=function(e){
+    print("nothing enriched")
+  })
+}
+
+kegg_gsea_baseMean <- function(DESEq2_dataframe, write=FALSE, path=""){
+  locus_tags <- row.names(DESEq2_dataframe)
+  geneList <- DESEq2_dataframe$baseMean
+  names(geneList) <- locus_tags
+  geneList = sort(geneList, decreasing = TRUE)
+  
+  set.seed(42)
+  kegg_gsea_object <- gseKEGG(geneList, organism="syn", minGSSize=10, pvalueCutoff = 0.05, seed=TRUE)
+  tryCatch({
+    print(head(kegg_gsea_object)[,1:10])
+  
+  if(write){
+    write.csv(kegg_gsea_object, path)
+  }
+  return(kegg_gsea_object)}, error=function(e){
+    print("nothing enriched")
+  })
+}
+```
+
+## Without taking width into account
+
+When width of features is not taken into account, there is no specific enrichment of certain terms in more highly expressed features. One exception is the GO term "transposase activity", which is depleted when analyzing the comparison of dWT and dIF at time point 0h.
+
+```{r}
+go_gsea_baseMeans(CDS_result_dIF)
+go_gsea_baseMeans(CDS_result_dWT)
+go_gsea_baseMeans(CDS_result_dWT_dIF_0h)
+go_gsea_baseMeans(CDS_result_dWT_dIF_1h)
+
+kegg_gsea_baseMean(CDS_result_dIF)
+kegg_gsea_baseMean(CDS_result_dWT)
+kegg_gsea_baseMean(CDS_result_dWT_dIF_0h)
+kegg_gsea_baseMean(CDS_result_dWT_dIF_1h)
+```
+
+## When taking width of features into account
+
+```{r}
+norm_counts <- counts(ddsMat_CDS, normalized=TRUE)
+mean_norm_counts <- apply(norm_counts, 1, mean)
+mean_norm_counts_CDS <- subset(mean_norm_counts, names(mean_norm_counts) %in% CDS_features$locus_tag)
+CDS_feat_df <- as.data.frame(CDS_features)
+row.names(CDS_feat_df) <- CDS_feat_df$locus_tag
+mean_norm_counts_CDS_width <- mean_norm_counts_CDS/CDS_feat_df[names(mean_norm_counts_CDS),]$width
+```
+
+```{r}
+mean_norm_counts_CDS_width <- sort(mean_norm_counts_CDS_width, decreasing=TRUE)
+set.seed(42)
+go_gsea_baseMeans_width <- GSEA(mean_norm_counts_CDS_width, TERM2GENE=term_to_gene, TERM2NAME = term_to_name, nPermSimple=10000, seed=TRUE)
+set.seed(42)
+kegg_gsea_baseMeans_width <- gseKEGG(mean_norm_counts_CDS_width, organism="syn", minGSSize=10, pvalueCutoff = 0.05, nPermSimple=10000, seed=TRUE)
+```
+
+```{r}
+go_gsea_baseMeans_width[,1:10]
+write.csv(go_gsea_baseMeans_width, "output/enrichment/GO_GSEA_baseMeans_perWidth.csv")
+kegg_gsea_baseMeans_width[,1:10]
+write.csv(kegg_gsea_baseMeans_width, "output/enrichment/KEGG_GSEA_baseMeans_perWidth.csv")
+```
+
+```{r}
+p <- gseaplot2(go_gsea_baseMeans_width, geneSetID=c(1,2,3,4))
+p
+ggsave("output/enrichment/Plots/GO_GSEA_baseMeans_perWidth.pdf", plot=p, width=15, height=12, units="cm")
+```
+
+```{r}
+p <- gseaplot2(kegg_gsea_baseMeans_width, geneSetID=c(1))
+p
+ggsave("output/enrichment/Plots/KEGG_GSEA_baseMeans_perWidth.pdf", plot=p, width=15, height=12, units="cm")
+```
+
+```{r, echo=FALSE}
+save.image(file = "GSEA_results.RData")
+```
+
+```{r, echo=FALSE}
+#load("GSEA_results.RData")
+```
+
+
+# Session info {.unnumbered}
+
+```{r sessionInfo, echo=FALSE}
+sessionInfo()
+```

@@ -1,0 +1,322 @@
+{
+    "a_galaxy_workflow": "true",
+    "annotation": "input: filtered .bam file, output: file with nt-positions, strand information, read count per nt",
+    "format-version": "0.1",
+    "name": "TIER_Transcript-Coverage",
+    "steps": {
+        "0": {
+            "annotation": "",
+            "content_id": null,
+            "errors": null,
+            "id": 0,
+            "input_connections": {},
+            "inputs": [],
+            "label": null,
+            "name": "Input dataset",
+            "outputs": [],
+            "position": {
+                "bottom": 619.6999969482422,
+                "height": 82.19999694824219,
+                "left": 582,
+                "right": 782,
+                "top": 537.5,
+                "width": 200,
+                "x": 582,
+                "y": 537.5
+            },
+            "tool_id": null,
+            "tool_state": "{\"optional\": false}",
+            "tool_version": null,
+            "type": "data_input",
+            "uuid": "e01c06e5-012d-484e-ab27-a443240ee37e",
+            "workflow_outputs": [
+                {
+                    "label": null,
+                    "output_name": "output",
+                    "uuid": "31dd45cd-6953-46c4-aeaa-e17388c79726"
+                }
+            ]
+        },
+        "1": {
+            "annotation": "",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/iuc/bedtools/bedtools_genomecoveragebed/2.29.2",
+            "errors": null,
+            "id": 1,
+            "input_connections": {
+                "input_type|input": {
+                    "id": 0,
+                    "output_name": "output"
+                }
+            },
+            "inputs": [
+                {
+                    "description": "runtime parameter for tool bedtools Genome Coverage",
+                    "name": "input_type"
+                }
+            ],
+            "label": null,
+            "name": "bedtools Genome Coverage",
+            "outputs": [
+                {
+                    "name": "output",
+                    "type": "bedgraph"
+                }
+            ],
+            "position": {
+                "bottom": 531.5,
+                "height": 134,
+                "left": 902,
+                "right": 1102,
+                "top": 397.5,
+                "width": 200,
+                "x": 902,
+                "y": 397.5
+            },
+            "post_job_actions": {
+                "HideDatasetActionoutput": {
+                    "action_arguments": {},
+                    "action_type": "HideDatasetAction",
+                    "output_name": "output"
+                },
+                "TagDatasetActionoutput": {
+                    "action_arguments": {
+                        "tags": "#plusStrand"
+                    },
+                    "action_type": "TagDatasetAction",
+                    "output_name": "output"
+                }
+            },
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/iuc/bedtools/bedtools_genomecoveragebed/2.29.2",
+            "tool_shed_repository": {
+                "changeset_revision": "0a5c785ac6db",
+                "name": "bedtools",
+                "owner": "iuc",
+                "tool_shed": "toolshed.g2.bx.psu.edu"
+            },
+            "tool_state": "{\"d\": \"true\", \"dz\": \"false\", \"five\": \"false\", \"input_type\": {\"input_type_select\": \"bam\", \"__current_case__\": 1, \"input\": {\"__class__\": \"RuntimeValue\"}}, \"report\": {\"report_select\": \"hist\", \"__current_case__\": 1, \"max\": \"0\"}, \"split\": \"false\", \"strand\": \"-strand +\", \"three\": \"false\", \"__page__\": null, \"__rerun_remap_job_id__\": null}",
+            "tool_version": null,
+            "type": "tool",
+            "uuid": "4879bfbb-0e0c-4cd6-9dcc-11c72b0c1b44",
+            "workflow_outputs": []
+        },
+        "2": {
+            "annotation": "",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/iuc/bedtools/bedtools_genomecoveragebed/2.29.2",
+            "errors": null,
+            "id": 2,
+            "input_connections": {
+                "input_type|input": {
+                    "id": 0,
+                    "output_name": "output"
+                }
+            },
+            "inputs": [
+                {
+                    "description": "runtime parameter for tool bedtools Genome Coverage",
+                    "name": "input_type"
+                }
+            ],
+            "label": null,
+            "name": "bedtools Genome Coverage",
+            "outputs": [
+                {
+                    "name": "output",
+                    "type": "bedgraph"
+                }
+            ],
+            "position": {
+                "bottom": 767.5,
+                "height": 134,
+                "left": 895,
+                "right": 1095,
+                "top": 633.5,
+                "width": 200,
+                "x": 895,
+                "y": 633.5
+            },
+            "post_job_actions": {
+                "HideDatasetActionoutput": {
+                    "action_arguments": {},
+                    "action_type": "HideDatasetAction",
+                    "output_name": "output"
+                },
+                "TagDatasetActionoutput": {
+                    "action_arguments": {
+                        "tags": "#minusStrand"
+                    },
+                    "action_type": "TagDatasetAction",
+                    "output_name": "output"
+                }
+            },
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/iuc/bedtools/bedtools_genomecoveragebed/2.29.2",
+            "tool_shed_repository": {
+                "changeset_revision": "0a5c785ac6db",
+                "name": "bedtools",
+                "owner": "iuc",
+                "tool_shed": "toolshed.g2.bx.psu.edu"
+            },
+            "tool_state": "{\"d\": \"true\", \"dz\": \"false\", \"five\": \"false\", \"input_type\": {\"input_type_select\": \"bam\", \"__current_case__\": 1, \"input\": {\"__class__\": \"RuntimeValue\"}}, \"report\": {\"report_select\": \"hist\", \"__current_case__\": 1, \"max\": \"0\"}, \"split\": \"false\", \"strand\": \"-strand -\", \"three\": \"false\", \"__page__\": null, \"__rerun_remap_job_id__\": null}",
+            "tool_version": null,
+            "type": "tool",
+            "uuid": "8eebb647-71f7-4ad6-9fb2-af3bd0ecc8d8",
+            "workflow_outputs": []
+        },
+        "3": {
+            "annotation": "",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/text_processing/tp_awk_tool/1.1.2",
+            "errors": null,
+            "id": 3,
+            "input_connections": {
+                "infile": {
+                    "id": 1,
+                    "output_name": "output"
+                }
+            },
+            "inputs": [],
+            "label": null,
+            "name": "Text reformatting",
+            "outputs": [
+                {
+                    "name": "outfile",
+                    "type": "input"
+                }
+            ],
+            "position": {
+                "bottom": 504.1000061035156,
+                "height": 113.60000610351562,
+                "left": 1191,
+                "right": 1391,
+                "top": 390.5,
+                "width": 200,
+                "x": 1191,
+                "y": 390.5
+            },
+            "post_job_actions": {
+                "HideDatasetActionoutfile": {
+                    "action_arguments": {},
+                    "action_type": "HideDatasetAction",
+                    "output_name": "outfile"
+                }
+            },
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/text_processing/tp_awk_tool/1.1.2",
+            "tool_shed_repository": {
+                "changeset_revision": "ddf54b12c295",
+                "name": "text_processing",
+                "owner": "bgruening",
+                "tool_shed": "toolshed.g2.bx.psu.edu"
+            },
+            "tool_state": "{\"code\": \"{print $1\\\"-\\\" $2 \\\"-plus\\\", $3}\", \"infile\": {\"__class__\": \"ConnectedValue\"}, \"__page__\": null, \"__rerun_remap_job_id__\": null}",
+            "tool_version": null,
+            "type": "tool",
+            "uuid": "48938068-3e6b-4174-99b8-180b8332b244",
+            "workflow_outputs": []
+        },
+        "4": {
+            "annotation": "",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/text_processing/tp_awk_tool/1.1.2",
+            "errors": null,
+            "id": 4,
+            "input_connections": {
+                "infile": {
+                    "id": 2,
+                    "output_name": "output"
+                }
+            },
+            "inputs": [],
+            "label": null,
+            "name": "Text reformatting",
+            "outputs": [
+                {
+                    "name": "outfile",
+                    "type": "input"
+                }
+            ],
+            "position": {
+                "bottom": 754.1000061035156,
+                "height": 113.60000610351562,
+                "left": 1196,
+                "right": 1396,
+                "top": 640.5,
+                "width": 200,
+                "x": 1196,
+                "y": 640.5
+            },
+            "post_job_actions": {
+                "HideDatasetActionoutfile": {
+                    "action_arguments": {},
+                    "action_type": "HideDatasetAction",
+                    "output_name": "outfile"
+                }
+            },
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/text_processing/tp_awk_tool/1.1.2",
+            "tool_shed_repository": {
+                "changeset_revision": "ddf54b12c295",
+                "name": "text_processing",
+                "owner": "bgruening",
+                "tool_shed": "toolshed.g2.bx.psu.edu"
+            },
+            "tool_state": "{\"code\": \"{print $1\\\"-\\\" $2 \\\"-minus\\\", $3}\", \"infile\": {\"__class__\": \"ConnectedValue\"}, \"__page__\": null, \"__rerun_remap_job_id__\": null}",
+            "tool_version": null,
+            "type": "tool",
+            "uuid": "a1fb6060-6a8e-4c26-90d8-e529d6a7b813",
+            "workflow_outputs": []
+        },
+        "5": {
+            "annotation": "",
+            "content_id": "toolshed.g2.bx.psu.edu/repos/bgruening/text_processing/tp_cat/0.1.0",
+            "errors": null,
+            "id": 5,
+            "input_connections": {
+                "inputs": {
+                    "id": 3,
+                    "output_name": "outfile"
+                },
+                "queries_0|inputs2": {
+                    "id": 4,
+                    "output_name": "outfile"
+                }
+            },
+            "inputs": [],
+            "label": null,
+            "name": "Concatenate datasets",
+            "outputs": [
+                {
+                    "name": "out_file1",
+                    "type": "input"
+                }
+            ],
+            "position": {
+                "bottom": 636.5,
+                "height": 144,
+                "left": 1472,
+                "right": 1672,
+                "top": 492.5,
+                "width": 200,
+                "x": 1472,
+                "y": 492.5
+            },
+            "post_job_actions": {},
+            "tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/text_processing/tp_cat/0.1.0",
+            "tool_shed_repository": {
+                "changeset_revision": "20344ce0c811",
+                "name": "text_processing",
+                "owner": "bgruening",
+                "tool_shed": "toolshed.g2.bx.psu.edu"
+            },
+            "tool_state": "{\"inputs\": {\"__class__\": \"ConnectedValue\"}, \"queries\": [{\"__index__\": 0, \"inputs2\": {\"__class__\": \"ConnectedValue\"}}], \"__page__\": null, \"__rerun_remap_job_id__\": null}",
+            "tool_version": null,
+            "type": "tool",
+            "uuid": "7ced1f21-99ad-437c-bf8d-296c55676f6f",
+            "workflow_outputs": [
+                {
+                    "label": null,
+                    "output_name": "out_file1",
+                    "uuid": "cea5cc3c-52c5-4798-92cf-ed246514a3b5"
+                }
+            ]
+        }
+    },
+    "tags": [],
+    "uuid": "48a63201-586a-4ea4-8988-a91224162696",
+    "version": 1
+}

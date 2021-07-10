@@ -1,0 +1,3 @@
+# After uploading data: decompress to .fastq (from .fastq.gz) and do Text reformatting with awk to make read names compatible with UMI-tools deduplicate
+
+{if($0 ~ /^@/) {val=$0; split(val,vector," "); split(vector[1], tag, ":"); print vector[1] "_" tag[8]} else {print $0} }

@@ -1,0 +1,3 @@
+"","ID","Description","GeneRatio","BgRatio","pvalue","p.adjust","qvalue","geneID","Count"
+"syn00195","syn00195","Photosynthesis","15/78","63/953",6.70286670178674e-05,0.0028822326817683,0.00275170317231245,"slr1311/slr0737/sll1322/sll1194/smr0005/slr1834/slr1835/sll0851/sml0008/ssr2831/sll0427/ssl0563/smr0001/slr0342/sll0199",15
+"syn00196","syn00196","Photosynthesis - antenna proteins","6/78","15/953",0.000685427096235323,0.0147366825690594,0.0140692930279882,"slr2051/sll1580/sll1578/sll1577/slr1986/slr0335",6

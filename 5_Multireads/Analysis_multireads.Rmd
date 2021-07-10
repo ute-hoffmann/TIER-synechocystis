@@ -1,0 +1,763 @@
+---
+title: "Creation of grp files for visualization"
+author:
+- affiliation: AG Annegret Wilde, Institute of Biology III
+  name: "Ute Hoffmann"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    fig_width: 15
+    fig_height: 8
+    theme: united
+    toc: yes
+    number_sections: true
+  pdf_document:
+    toc: yes
+    number_sections: true
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+require("knitr")
+opts_knit$set(root.dir = "/data/Dokumente/uni/Doktorarbeit/20201010_TIER-Seq_Data/00_Manuscript/Code_final/5_Multireads/")
+library(tidyverse)
+library(DESeq2)
+library(edgeR)
+library(ggplot2)
+library(ggrepel)
+library(ggpubr)
+library(pheatmap)
+library(RColorBrewer)
+library(vsn)
+library(GenomicRanges)
+library(Biostrings)
+library(rtracklayer)
+library(viridis)
+```
+
+```{r}
+#import gff for anno-TSS
+features <- rtracklayer::import("Input/20210217_syne_onlyUnique_withFeat.gff3")
+TUs <- rtracklayer::import("Input/Kopf_4091_TUs_combined.gff3")
+```
+
+```{r, echo=FALSE}
+# Colors: (based on scale_fill_OkabeIto())
+# values=c("#e69f00ff", "#005a96ff") - e6... : rne(Ts), 005...: rne(WT)
+#c("#005a96b2", "#e69f00b2", "d3d3d3b2") # in transparency, d3d3d3b2 if none of both strains
+# Colours (ColorBrewer Dark2) for PSS / TSS:
+# values=c("PSS"="#4e9879ff", "TSS"="#c96928ff")
+
+# some functions which are incredibly handy
+
+#### Functions for plotting and handling DESeq2 objects
+
+count_up_down <- function(deseq2_dframe, foldchange=1, padjusted=0.01)
+{ # input: DESeq2 results object / data frame; foldchange and padjusted; returns numbers of features in DESeq2 results object differentially expressed according to cut-offs
+  deseq2_dframe <- as.data.frame(subset(deseq2_dframe, !is.na(deseq2_dframe$padj)))
+  # create vectors of down- or upregulated features, give out their numbers
+  down <- deseq2_dframe$log2FoldChange < -foldchange & deseq2_dframe$padj < padjusted
+  up <- deseq2_dframe$log2FoldChange > foldchange & deseq2_dframe$padj < padjusted
+  
+  print(paste("number of features down: ", sum(down)))
+  print(paste("number of features up: ", sum(up)))
+}
+
+return_up_down <- function(deseq2_dframe, foldchange=1, padjusted=0.01)
+{
+  deseq2_dframe <- subset(deseq2_dframe, !is.na(deseq2_dframe$padj))
+  # create vectors of down- or upregulated features, give out their numbers
+  down <- deseq2_dframe$log2FoldChange < -foldchange & deseq2_dframe$padj < padjusted
+  up <- deseq2_dframe$log2FoldChange > foldchange & deseq2_dframe$padj < padjusted
+  
+  vector_differentiallyExpressed <- c(row.names(deseq2_dframe)[down],row.names(deseq2_dframe)[up])
+  return(vector_differentiallyExpressed)
+}
+
+volcanoPlot_ggplot <-  function(deseq2_dframe, foldchange=1, padjusted=0.01, color=TRUE, text=FALSE, numbers=TRUE, lines_padj_FC=TRUE)
+{ # plots Volcano Plot for DESeq2 results object
+  # compare: https://biocorecrg.github.io/CRG_RIntroduction/volcano-plots.html
+  
+  # The significantly differentially expressed genes are the ones found in the upper-left and upper-right corners.
+  # Add a column to the data frame to specify if they are UP- or DOWN- regulated (log2FoldChange respectively positive or negative)
+  
+  # add a column of NAs
+  df_copy <- as.data.frame(deseq2_dframe)
+  df_copy$diffexpressed <- "NO"
+  # if log2Foldchange > 0.6 and pvalue < 0.05, set as "UP" 
+  df_copy$diffexpressed[df_copy$log2FoldChange > foldchange & df_copy$padj < padjusted] <- "UP"
+  # if log2Foldchange < -0.6 and pvalue < 0.05, set as "DOWN"
+  df_copy$diffexpressed[df_copy$log2FoldChange < -foldchange & df_copy$padj < padjusted] <- "DOWN"
+  
+  # prepare labels of plot
+  df_copy$delabel <- NA
+  df_copy$delabel[df_copy$diffexpressed != "NO"] <- row.names(df_copy)[df_copy$diffexpressed != "NO"]
+  
+  # Plot
+  p <- ggplot(data=df_copy, aes(x=log2FoldChange, y=-log10(padj), col=diffexpressed, label=delabel)) + geom_point(alpha=0.3, show.legend = FALSE) + 
+    theme_light() + labs(y="-Log10(p.adj_BH)", x="Log2FC") + theme(legend.position = "none")
+  
+  # color points
+  mycolors <- c("#e69f00b2","#005a96b2",  "#d3d3d3b2")
+  names(mycolors) <- c("DOWN", "UP", "NO")
+  p <- p + scale_colour_manual(values = mycolors)
+  
+  # Add vertical lines for log2FoldChange thresholds, and one horizontal line for the p-value threshold 
+  if(lines_padj_FC){
+    p <- p + geom_vline(xintercept=c(-foldchange, foldchange), linetype="dotted") +
+      geom_hline(yintercept=-log10(padjusted), linetype="dotted") # http://www.sthda.com/english/wiki/ggplot2-line-types-how-to-change-line-types-of-a-graph-in-r-software
+  }
+  
+  # Now write down the name of genes beside the points...
+  # Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+  if(text){
+    p <- p + geom_text_repel(fontface="italic")   #geom_text()
+  }
+  
+  return(p)
+}
+
+MAplot_ggplot <-  function(deseq2_dframe, foldchange=1, padjusted=0.05, color=TRUE, text=FALSE, numbers=TRUE, lines_padj_FC=TRUE, y_axis_label="Log2FC")
+{ # plots MAplot for DESeq2 results object
+  # add a column of NAs
+  df_copy <- as.data.frame(deseq2_dframe)
+  df_copy$diffexpressed <- "NO"
+  # if log2Foldchange > 0 and pvalue < 0.05, set as "UP" 
+  df_copy$diffexpressed[df_copy$log2FoldChange > 0 & df_copy$padj < padjusted] <- "UP"
+  # if log2Foldchange < 0 and pvalue < 0.05, set as "DOWN"
+  df_copy$diffexpressed[df_copy$log2FoldChange < 0 & df_copy$padj < padjusted] <- "DOWN"
+  
+  # prepare labels of plot
+  df_copy$delabel <- NA
+  df_copy$delabel[df_copy$diffexpressed != "NO"] <- row.names(df_copy)[df_copy$diffexpressed != "NO"]
+  
+  # Plot
+  p <- ggplot(data=df_copy, aes(x=baseMean, y=log2FoldChange, col=diffexpressed, label=delabel)) + geom_point(size=0.5, show.legend = FALSE) + 
+    theme_light() + labs(y=y_axis_label, x="Mean of Normalized Counts") + theme(legend.position = "none") + scale_x_continuous(trans='log10')
+  
+  # color points
+  mycolors <- c("#e69f00ff","#005a96ff",  "#d3d3d3ff")
+  names(mycolors) <- c("DOWN", "UP", "NO")
+  p <- p + scale_colour_manual(values = mycolors)
+  
+  # Add vertical lines for log2FoldChange thresholds, and one horizontal line for the p-value threshold 
+  if(lines_padj_FC){
+    p <- p + geom_hline(yintercept=c(-foldchange, 0, foldchange), linetype="dotted")
+  }
+  
+  # Now write down the name of genes beside the points...
+  # Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+  if(text){
+    p <- p + geom_text_repel(fontface="italic")   #geom_text()
+  }
+  
+  return(p)
+}
+
+PCA_plot <- function(dds, title){
+  # plots PCA for DESeq2 Data Set object, uses rlog, assumes DESeq2 data set object for dWT / dIF comparison at 0h / 1h 
+  rld <- rlog(dds)
+  pcaData <- plotPCA(rld, intgroup=c("strain", "treatment"), returnData=TRUE)
+  percentVar <- round(100 * attr(pcaData, "percentVar"))
+  ggplot(pcaData, aes(PC1, PC2, color=strain, shape=treatment)) +
+    geom_point(size=3) +
+    xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+    ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+    coord_fixed() + theme_light() + scale_color_manual(name="Strain", values=c("#005a96ff", "#e69f00ff"), breaks=c("dWT", "dIF"), labels=c("rne(WT)", "rne(Ts)")) + 
+    theme(legend.position="bottom", legend.box="vertical", legend.margin=margin(t=-0.2, r=0, b=0, l=0, unit="cm"))  + 
+    labs(title=title) + scale_shape_discrete(name="Heat", breaks=c("0h", "1h"), labels=c("0h", "1h"))
+}
+
+heatmap_plot <- function(dds, title){
+  # plots heat map for DESeq2 Data Set object, uses rlog
+  dat <- assay(rlog(dds))
+  dists_rl <- dist(t(dat))
+  mat <- as.matrix(dists_rl)
+  rownames(mat) <- c(rep(c("rne(Ts) 0h", "rne(Ts) 1h"), 3),rep(c("rne(WT) 0h", "rne(WT) 1h"), 3))
+  colnames(mat) <- NULL
+  colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+  pheatmap(
+    mat,
+    clustering_distance_rows = dists_rl,
+    clustering_distance_cols = dists_rl,
+    col = colors,
+    main = "Sample-to-sample distances"
+  )
+}
+
+PCA_plot_PSSTSS <- function(dds, title){
+  # plots PCA for PSS / TSS comparison of DESeq Data set
+  rld <- rlog(dds)
+  pcaData <- plotPCA(rld, intgroup=c("type", "condition"), returnData=TRUE)
+  percentVar <- round(100 * attr(pcaData, "percentVar"))
+  return(ggplot(pcaData, aes(PC1, PC2, color=condition, shape=type)) +
+    geom_point(size=3) +
+    xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+    ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+    coord_fixed() + theme_light() + scale_color_manual(name="", values=c("#ffb000ff", "#986800ff", "#0098ffff", "#003559ff"), breaks=c("dIF_0h", "dIF_1h", "dWT_0h", "dWT_1h"), labels=c("rne(Ts) 0h", "rne(Ts) 1h", "rne(WT) 0h", "rne(WT) 1h")) + 
+    theme(legend.position="bottom", legend.box="vertical", legend.margin=margin(t=-0.2, r=0, b=0, l=0, unit="cm")) +
+    labs(title=title) + scale_shape_discrete(name="", breaks=c("PSS", "TSS"), labels=c("PSS", "TSS")))
+}
+
+heatmap_plot_PSSTSS <- function(dds, title){
+  # plots heat map for PSS / TSS comparison of DESeq Data set
+  dat <- assay(rlog(dds))
+  dists_rl <- dist(t(dat))
+  mat <- as.matrix(dists_rl)
+  #rownames(mat) <- c(rep(c("rne(Ts) 0h", "rne(Ts) 1h"), 3),rep(c("rne(WT) 0h", "rne(WT) 1h"), 3))
+  colnames(mat) <- NULL
+  colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+  pheatmap(
+    mat,
+    clustering_distance_rows = dists_rl,
+    clustering_distance_cols = dists_rl,
+    col = colors,
+    main = "Sample-to-sample distances"
+  )
+}
+
+pvaluePlot <- function(result_object, title_plot){ 
+  # plots histogram of distribution of p values in DESeq2 results object
+  use <- result_object$baseMean > metadata(result_object)$filterThreshold
+  h1 <- hist(result_object$pvalue[!use], breaks=0:50/50, plot=FALSE)
+  h2 <- hist(result_object$pvalue[use], breaks=0:50/50, plot=FALSE)
+  colori <- c(`filtered (low count)`="khaki", `not filtered`="powderblue")
+  barplot(height = rbind(h1$counts, h2$counts), beside = FALSE,
+        col = colori, space = 0, main = paste("Histogram of p-values for", title_plot), ylab="Frequency", xlab="P-values")
+  text(x = c(0, length(h1$counts)), y = 0, label = paste(c(0,1)),
+     adj = c(0.5,1.7), xpd=NA)
+  legend("topright", fill=rev(colori), legend=rev(names(colori)))
+}
+
+#### Functions to work on GRanges objects
+create_GRanges_object <- function(pos_list, base_means){
+  # creates GRanges object from pos_list and adds additional info about base_means (base_means input as vector)
+  # input: pos_list: List of positions which should be used for GRanges object: each element in list: [1]: contig name, [2]: nt-position (=start/stop), [3]: strand information
+  # with some extra constructs (e.g. as.integer(map_chr(pos_list, pluck, 2)) one can work around for-construct, but it's slower https://rstudio-education.github.io/tidyverse-cookbook/transform-lists-and-vectors.html
+  
+  # initialise vectors
+  seq_names <- c()
+  starts <- c()
+  stops <- c()
+  strands <- c()
+
+  for(i in 1:length(pos_list)){
+    seq_names[i] <- pos_list[[i]][1]
+    starts[i] <- as.integer(pos_list[[i]][2])
+    stops[i] <- as.integer(pos_list[[i]][2])
+    if(pos_list[[i]][3]=="plus"){
+      strands[i] <- "+"
+    }else if(pos_list[[i]][3]=="minus"){
+      strands[i] <- "-"
+    }
+  }
+  
+  GRanges_object <- GRanges(seqnames=seq_names,
+      ranges=IRanges(starts, stops), strand=strands, baseMean=base_means)
+
+  return(GRanges_object)
+}
+
+create_GRanges_object_from_resObject <- function(DESeq2_resObject, foldchange, padjusted, up=TRUE){
+  # input: DESeq2 results object, + foldchange and padjusted cut-offs which should be used to only select certain set of positions, up=TRUE -> extract positions with log2FC > foldchange, else (up=FALSE) -> extract positions with log2FC < foldchange 
+  if(up){
+  subset_resObject <- subset(DESeq2_resObject, DESeq2_resObject$log2FoldChange>foldchange & DESeq2_resObject$padj < padjusted)
+  } else{
+  subset_resObject <- subset(DESeq2_resObject, DESeq2_resObject$log2FoldChange<foldchange & DESeq2_resObject$padj < padjusted)
+  }
+  positions<- base::strsplit(row.names(subset_resObject), "-")
+  rangesObject <- create_GRanges_object(positions, subset_resObject$baseMean)
+  return(rangesObject)
+}
+
+save_gff <- function(Ranges, file_path, basic_name){
+  rtracklayer::export(Ranges, paste(file_path, basic_name, "_all.gff", sep=""))
+  rtracklayer::export(subset(Ranges, seqnames(Ranges)=="BA000022.2"), paste(file_path, basic_name, "_chromo.gff", sep=""))
+  rtracklayer::export(subset(Ranges, seqnames(Ranges)=="AP004311.1"), paste(file_path, basic_name, "_pSYSA.gff", sep=""))
+  rtracklayer::export(subset(Ranges, seqnames(Ranges)=="AP004310.1"), paste(file_path, basic_name, "_pSYSM.gff", sep=""))
+  rtracklayer::export(subset(Ranges, seqnames(Ranges)=="AP004312.1"), paste(file_path, basic_name, "_pSYSG.gff", sep=""))
+  rtracklayer::export(subset(Ranges, seqnames(Ranges)=="AP006585.1"), paste(file_path, basic_name, "_pSYSX.gff", sep=""))
+}
+
+advanced_reduce <- function(rangesObject){
+  # function to reduce rangesObject (join adjacent positions to one longer position), and at same time trim positions with width > 0 to the one with highest population of reads (highest baseMean)
+  new_ranges <- GenomicRanges::reduce(rangesObject)
+  redundant_pos <- new_ranges[which(width(new_ranges)>1)]
+  
+  indices_new_ranges <- which(width(new_ranges)>1)
+  
+  starts <- start(new_ranges)
+  ends <- end(new_ranges)
+  strands <- strand(new_ranges)
+  seqname_vec <- seqnames(new_ranges)
+  
+  for(i in indices_new_ranges){
+      # extract baseMeans from original object    
+      ranges_index <- which(start(rangesObject) %in% starts[i]:ends[i] & strand(rangesObject)==strands[i] & seqnames(rangesObject)==seqname_vec[i])
+      baseMeans <- rangesObject[ranges_index]$baseMean
+      positions <- starts[i]:ends[i]
+  
+      start(new_ranges[i]) <- positions[which(baseMeans==max(baseMeans))]
+      end(new_ranges[i]) <- positions[which(baseMeans==max(baseMeans))]
+  }
+
+  return(new_ranges)
+}
+
+advanced_reduce_withBaseMeans <- function(rangesObject){
+  # function to reduce rangesObject (join adjacent positions to one longer position), and at same time trim positions with width > 0 to the one with highest population of reads (highest baseMean)
+  new_ranges <- GenomicRanges::reduce(rangesObject)
+  new_ranges$baseMeans <- NA
+  redundant_pos <- new_ranges[which(width(new_ranges)>1)]
+  
+  indices_new_ranges <- which(width(new_ranges)>1)
+  indices_new_ranges_width0 <- which(width(new_ranges)==1)
+  
+  starts <- start(new_ranges)
+  ends <- end(new_ranges)
+  strands <- strand(new_ranges)
+  seqname_vec <- seqnames(new_ranges)
+  
+  for(i in 1:length(new_ranges)){
+      # extract baseMeans from original object    
+      ranges_index <- which(start(rangesObject) %in% starts[i]:ends[i] & strand(rangesObject)==strands[i] & seqnames(rangesObject)==seqname_vec[i])
+      baseMeans <- rangesObject[ranges_index]$baseMean
+      positions <- starts[i]:ends[i]
+  
+      start(new_ranges[i]) <- positions[which(baseMeans==max(baseMeans))]
+      end(new_ranges[i]) <- positions[which(baseMeans==max(baseMeans))]
+      new_ranges[i]$baseMeans <- max(baseMeans)
+  }
+
+  return(new_ranges)
+}
+```
+
+# Create .grps
+
+Coverage data was created using Filtered .bam files with multireads (output of Galaxy workflow TIER-Seq_Processing_1), which were processed by bedtools genome coverage (Galaxy workflow TIER-Seq_PSS-TSS for PSS, TSS data and TIER_Transcript-Coverage for transcript data). Files were re-named in the respective history and downloaded as one .zip. In a next step, separate files were combined into one large table using Python code (joinFiles_PSS.py, joinFiles_TSS.py, joinFiles_transcript.py).
+
+Normalization factors are size factors determined DESeq2 using separate .Rmd files (PSS-TSS Analysis.Rmd, TranscriptAnalysis.Rmd). Divide original data by DESeq2 size factors to obtain normalized data.
+
+```{r}
+transcript_factors <- read.table("Input/transcript_sizeFactors.csv", sep=",", header=TRUE, row.names=1)
+TSS_factors <- read.table("Input/TSS_sizeFactors.csv", sep=",", header=TRUE, row.names=1)
+PSS_factors <- read.table("Input/PSS_sizeFactors.csv", sep=",", header=TRUE, row.names=1)
+row.names(TSS_factors) <- c("dIF11_0h", "dIF11_1h", "dIF12_0h", "dIF12_1h", "dIF31_0h", "dIF31_1h", "dWT1_0h", "dWT1_1h", "dWT2_0h", "dWT2_1h", "dWT3_0h", "dWT3_1h")
+row.names(PSS_factors) <- c("dIF11_0h", "dIF11_1h", "dIF12_0h", "dIF12_1h", "dIF31_0h", "dIF31_1h", "dWT1_0h", "dWT1_1h", "dWT2_0h", "dWT2_1h", "dWT3_0h", "dWT3_1h")
+coldata_general <- read.table("Input/colData_general.csv", sep=",", header=TRUE, row.names=1)
+```
+
+## PSS data
+
+```{r}
+PSS_coverage <- read.table("Input/multireads_PSS_5ends_combined.txt", sep="\t", header=TRUE, row.names=1)
+ddsMat_PSS <- DESeqDataSetFromMatrix(countData = PSS_coverage,
+                                 colData = coldata_general,
+                                 design = ~ condition)
+PSS_fact <- PSS_factors$factor
+names(PSS_fact) <- row.names(PSS_factors)
+ddsMat_PSS$sizeFactor <- PSS_fact
+
+PSS_norm_counts <- counts(ddsMat_PSS, normalized=TRUE)
+
+# uncomment following lines to create .grp files for visualization: ! takes some time !
+# grp_File <- data.frame("rneTs_0h"=apply(PSS_norm_counts[,c("dIF11_0h", "dIF12_0h", "dIF31_0h")],1,mean), "rneTs_1h"=apply(PSS_norm_counts[,c("dIF11_1h", "dIF12_1h", "dIF31_1h")],1,mean), "rneWT_0h"=apply(PSS_norm_counts[,c("dWT1_0h", "dWT2_0h", "dWT3_0h")],1,mean), "rneWT_1h"=apply(PSS_norm_counts[,c("dWT1_1h", "dWT2_1h", "dWT3_1h")],1,mean))
+# 
+# grp_File$seqname <- rep(NA, length(grp_File$rneTs_0h))
+# seqnames <- c("BA000022.2", "AP004310.1", "AP004311.1", "AP004312.1", "AP006585.1")
+# for(i in seqnames){
+#   grp_File[which(grepl(i, row.names(grp_File))),]$seqname <- i
+# }
+# grp_File$strand <- rep(NA, length(grp_File$rneTs_0h))
+# for(i in c("plus", "minus")){
+#   grp_File[which(grepl(i, row.names(grp_File))),]$strand <- i
+# }
+# 
+# for(i in seqnames){
+#   for(j in c("plus", "minus")){
+#     tmp <- subset(grp_File, grp_File$seqname==i & grp_File$strand==j)[,c("rneTs_0h", "rneTs_1h", "rneWT_0h", "rneWT_1h")]
+#     s=""
+#     if(j=="plus"){
+#       s="fw"
+#     }else{
+#       s="rev"
+#     }
+#     write.table(tmp, file=paste("Output/grp/PSS/", i, "_PSS_Ts-0h-1h-WT-0h-1h_", s, ".grp", sep=""), sep="\t", row.names=FALSE, col.names = FALSE)
+#   }
+# }
+```
+
+## TSS data
+
+```{r}
+TSS_coverage <- read.table("Input/multireads_TSS_5ends_combined.txt", sep="\t", header=TRUE, row.names=1)
+ddsMat_TSS <- DESeqDataSetFromMatrix(countData = TSS_coverage,
+                                 colData = coldata_general,
+                                 design = ~ condition)
+TSS_fact <- TSS_factors$factor
+names(TSS_fact) <- row.names(TSS_factors)
+ddsMat_TSS$sizeFactor <- TSS_fact
+
+TSS_norm_counts <- counts(ddsMat_TSS, normalized=TRUE)
+
+# uncomment following lines to create .grp files for visualization: ! takes some time !
+# grp_File <- data.frame("rneTs_0h"=apply(TSS_norm_counts[,c("dIF11_0h", "dIF12_0h", "dIF31_0h")],1,mean), "rneTs_1h"=apply(TSS_norm_counts[,c("dIF11_1h", "dIF12_1h", "dIF31_1h")],1,mean), "rneWT_0h"=apply(TSS_norm_counts[,c("dWT1_0h", "dWT2_0h", "dWT3_0h")],1,mean), "rneWT_1h"=apply(TSS_norm_counts[,c("dWT1_1h", "dWT2_1h", "dWT3_1h")],1,mean))
+# 
+# grp_File$seqname <- rep(NA, length(grp_File$rneTs_0h))
+# seqnames <- c("BA000022.2", "AP004310.1", "AP004311.1", "AP004312.1", "AP006585.1")
+# for(i in seqnames){
+#   grp_File[which(grepl(i, row.names(grp_File))),]$seqname <- i
+# }
+# grp_File$strand <- rep(NA, length(grp_File$rneTs_0h))
+# for(i in c("plus", "minus")){
+#   grp_File[which(grepl(i, row.names(grp_File))),]$strand <- i
+# }
+# 
+# for(i in seqnames){
+#   for(j in c("plus", "minus")){
+#     tmp <- subset(grp_File, grp_File$seqname==i & grp_File$strand==j)[,c("rneTs_0h", "rneTs_1h", "rneWT_0h", "rneWT_1h")]
+#     s=""
+#     if(j=="plus"){
+#       s="fw"
+#     }else{
+#       s="rev"
+#     }
+#     write.table(tmp, file=paste("Output/grp/TSS/", i, "_TSS_Ts-0h-1h-WT-0h-1h_", s, ".grp", sep=""), sep="\t", row.names=FALSE, col.names = FALSE)
+#   }
+# }
+```
+
+## Transcript data
+
+```{r}
+transcript_coverage <- read.table("Input/multireads_transcript_coverage_combined.txt", sep="\t", header=TRUE, row.names=1)
+ddsMat_transcript <- DESeqDataSetFromMatrix(countData = transcript_coverage,
+                                 colData = coldata_general,
+                                 design = ~ condition)
+transcript_fact <- transcript_factors$factor
+names(transcript_fact) <- row.names(transcript_factors)
+ddsMat_transcript$sizeFactor <- transcript_fact
+
+transcript_norm_counts <- counts(ddsMat_transcript, normalized=TRUE)
+
+# uncomment following lines to create .grp files for visualization: ! takes some time !
+# grp_File <- data.frame("rneTs_0h"=apply(transcript_norm_counts[,c("dIF11_0h", "dIF12_0h", "dIF31_0h")],1,mean), "rneTs_1h"=apply(transcript_norm_counts[,c("dIF11_1h", "dIF12_1h", "dIF31_1h")],1,mean), "rneWT_0h"=apply(transcript_norm_counts[,c("dWT1_0h", "dWT2_0h", "dWT3_0h")],1,mean), "rneWT_1h"=apply(transcript_norm_counts[,c("dWT1_1h", "dWT2_1h", "dWT3_1h")],1,mean))
+# 
+# grp_File$seqname <- rep(NA, length(grp_File$rneTs_0h))
+# seqnames <- c("BA000022.2", "AP004310.1", "AP004311.1", "AP004312.1", "AP006585.1")
+# for(i in seqnames){
+#   grp_File[which(grepl(i, row.names(grp_File))),]$seqname <- i
+# }
+# grp_File$strand <- rep(NA, length(grp_File$rneTs_0h))
+# for(i in c("plus", "minus")){
+#   grp_File[which(grepl(i, row.names(grp_File))),]$strand <- i
+# }
+# 
+# for(i in seqnames){
+#   for(j in c("plus", "minus")){
+#     tmp <- subset(grp_File, grp_File$seqname==i & grp_File$strand==j)[,c("rneTs_0h", "rneTs_1h", "rneWT_0h", "rneWT_1h")]
+#     s=""
+#     if(j=="plus"){
+#       s="fw"
+#     }else{
+#       s="rev"
+#     }
+#     write.table(tmp, file=paste("Output/grp/transcript/", i, "_transcript_Ts-0h-1h-WT-0h-1h_", s, ".grp", sep=""), sep="\t", row.names=FALSE, col.names = FALSE)
+#   }
+# }
+```
+
+# Perform DESeq2 analysis
+
+```{r read-Input}
+names(PSS_coverage) <- paste(names(PSS_coverage), "_PSS", sep="")
+names(PSS_fact) <- paste(names(PSS_fact), "_PSS", sep="")
+names(TSS_coverage) <- paste(names(TSS_coverage), "_TSS", sep="")
+names(TSS_fact) <- paste(names(TSS_fact), "_TSS", sep="")
+
+# merge PSS and TSS to merged_raw
+merged_raw <- merge(PSS_coverage, TSS_coverage, by="row.names")
+row.names(merged_raw) <- merged_raw$Row.names
+merged_raw$Row.names <- NULL
+rm(TSS_coverage)
+```
+
+When taking into account lowly populated sites, DESeq2 dispersion estimates become over-fitted. Hence, edgeR::filterByExpression() is used as a pre-processing step before further DESeq2 analyses.
+
+```{r edgeR-filter}
+group=c(rep(c("dIF_0h_PSS", "dIF_1h_PSS"), 3), rep(c("dWT_0h_PSS", "dWT_1h_PSS"), 3), rep(c("dIF_0h_TSS", "dIF_1h_TSS"), 3), rep(c("dWT_0h_TSS", "dWT_1h_TSS"), 3))
+y <- DGEList(counts=merged_raw, group=group)
+nrow(y)
+keep <- filterByExpr(y)
+y <- y[keep, ,keep.lib.size=FALSE] #reduces from 7,894,038 positions to 12,091
+nrow(y)
+
+merged_filtered <- merged_raw[row.names(y$counts),]
+nrow(merged_filtered)
+rm(merged_raw)
+
+coldata <- read.csv("Input/20210210_colData_PSS-TSS.csv", row.names=1)
+
+# create DESeq2 data object
+ddsMat_PSSTSS <- DESeqDataSetFromMatrix(countData = merged_filtered,
+                                 colData = coldata,
+                                 design = ~ condition + type)
+
+ddsMat_PSSTSS$sizeFactor <- c(PSS_fact, TSS_fact)
+ddsMat_PSSTSS <- DESeq(ddsMat_PSSTSS)
+
+res_PSSTSS <- results(ddsMat_PSSTSS, contrast=c("type", "PSS", "TSS"))
+write.csv(res_PSSTSS[order(res_PSSTSS$padj),], file="Output/DESeq2_resultsTables/results_PSS-TSS-comparisons.csv")
+```
+
+## Diagnostic Plots
+
+```{r}
+plotDispEsts(ddsMat_PSSTSS)
+pdf(file="Output/DESeq2_Plots/ddsMat_PSSTSS_DispEsts.pdf", width=4.5, height=4.5)
+plotDispEsts(ddsMat_PSSTSS, xlab="Mean of Normalized Counts", ylab="Dispersion")
+dev.off()
+
+p <- PCA_plot_PSSTSS(ddsMat_PSSTSS, "PSS-TSS")
+p
+ggsave("Output/DESeq2_Plots/ddsMat_PSSTSS_PCA.pdf", plot=p, width=15, height=9, units="cm")
+
+p <- heatmap_plot_PSSTSS(ddsMat_PSSTSS, "PSS-TSS")
+p
+ggsave("Output/DESeq2_Plots/ddsMat_PSSTSS_heatMap.pdf", plot=p, width=15, height=12, units="cm")
+rm(ddsMat_PSSTSS) # to free space
+
+pdf(file="Output/DESeq2_Plots/ddsMat_PSSTSS_hist_log2FC.pdf", width=4.5, height=4.5)
+hist(res_PSSTSS$log2FoldChange, breaks=20, main="", xlab="Log2FC(PSS/TSS)", ylab="Frequency")
+dev.off()
+hist(res_PSSTSS$log2FoldChange, breaks=20, main="DESeq2 Normalization", xlab="Log2FC PSS/TSS", ylab="Frequency")
+
+# non-normalized
+log2_all <- log2(apply(merged_filtered[,1:12],1, mean)/apply(merged_filtered[,13:24],1,mean))
+hist(log2_all, breaks=20, main="No normalization", xlab="Log2(PSS/TSS)")
+
+p <- MAplot_ggplot(res_PSSTSS, foldchange=0.8, y_axis_label = "Log2 fold-change(PSS/TSS)")
+p <- p + scale_colour_manual(values=c("UP"="#4e9879ff", "DOWN"="#9b511fff", "NO"="#d3d3d3ff"))
+p
+ggsave("Output/DESeq2_Plots/ddsMat_PSSTSS_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+## Extract DESeq2 results
+
+```{r PSSTSS-extract-DESeq2-results}
+res_PSSTSS <- subset(res_PSSTSS, !is.na(res_PSSTSS$padj))
+
+# down: TSS, up: PSS
+count_up_down(res_PSSTSS, foldchange=0.8, padjusted=0.05)
+p <- volcanoPlot_ggplot(res_PSSTSS, foldchange=0.8, padjusted=0.05)
+p
+ggsave("Output/DESeq2_Plots/ddsMat_PSSTSS_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+pdf(file="Output/DESeq2_Plots/ddsMat_PSSTSS_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(res_PSSTSS, "Comparison PSS to TSS")
+dev.off()
+pvaluePlot(res_PSSTSS, "Comparison PSS to TSS")
+
+# extract which positions are TSS, which are PSS
+PSS_positions_unfiltered <- row.names(subset(res_PSSTSS, res_PSSTSS$log2FoldChange>0.8 & res_PSSTSS$padj<0.05))
+PSS_nonReduced_Ranges <- create_GRanges_object(base::strsplit(PSS_positions_unfiltered, "-"), res_PSSTSS[PSS_positions_unfiltered,]$baseMean)
+TSS_positions_unfiltered <- row.names(subset(res_PSSTSS, res_PSSTSS$log2FoldChange<(-0.8) & res_PSSTSS$padj<0.05))
+```
+
+## Filter for ratio 5' ends / transcript coverage
+
+```{r filterTSS-positions}
+trans_norm <- as.data.frame(transcript_norm_counts)
+TSS_norm <- as.data.frame(TSS_norm_counts)
+PSS_norm <- as.data.frame(PSS_norm_counts)
+```
+
+```{r}
+TSS_trans_ratio_cutoff <- 0.02
+TSS_trans_ratio <- apply(TSS_norm[TSS_positions_unfiltered,],1,mean)/apply(trans_norm[TSS_positions_unfiltered,],1,mean)
+TSS_above_cutoff <- subset(TSS_positions_unfiltered, TSS_trans_ratio[TSS_positions_unfiltered]>TSS_trans_ratio_cutoff)
+TSS_positions_sorted<- base::strsplit(TSS_above_cutoff, "-")
+TSS_nonReduced_Ranges <- create_GRanges_object(TSS_positions_sorted, res_PSSTSS[TSS_above_cutoff,]$baseMean)
+```
+
+## Create .gff files
+
+```{r create-gff}
+PSS_positions_Ranges <- GenomicRanges::reduce(PSS_nonReduced_Ranges)
+length(PSS_positions_Ranges)
+
+TSS_positions_Ranges <- GenomicRanges::reduce(TSS_nonReduced_Ranges)
+length(TSS_positions_Ranges)
+
+TSS_positions_Ranges$type <- "TSS"
+PSS_positions_Ranges$type <- "PSS"
+save_gff(c(TSS_positions_Ranges, PSS_positions_Ranges), "Output/gffs/", "TSS_PSS_multireads")
+rm(TSS_positions_Ranges)
+rm(PSS_positions_Ranges)
+```
+
+# Use DESeq2-PSS Output for identifying differentially expressed between dIF and dWT
+
+```{r read-in-PSS-TSS-perform-DESeq2}
+PSS_use <- PSS_coverage[PSS_positions_unfiltered,]
+rm(PSS_coverage)
+
+coldata <- read.csv("Input/colData_PSS.csv", row.names=1)
+
+ddsMat_PSS <- DESeqDataSetFromMatrix(countData = PSS_use,
+                                 colData = coldata,
+                                 design = ~ condition)
+
+ddsMat_PSS$sizeFactor <- PSS_fact
+ddsMat_PSS <- DESeq(ddsMat_PSS) 
+```
+
+## Diagnostic Plots
+
+```{r}
+plotDispEsts(ddsMat_PSS, main="PSS comparison", xlab="Mean of Normalized Counts", ylab="Dispersion")
+p <- PCA_plot(ddsMat_PSS, "PSS")
+p 
+ggsave("Output/DESeq2_Plots/ddsMat_PSS_PCA.pdf", plot=p, width=9, height=9, units="cm")
+p <- heatmap_plot(ddsMat_PSS, "PSS")
+p
+ggsave("Output/DESeq2_Plots/ddsMat_PSS_heatMap.pdf", plot=p, width=15, height=12, units="cm")
+```
+
+## Extract Results
+
+```{r}
+# extract results
+PSS_result_dWT_dIF_1h <- results(ddsMat_PSS, contrast=c("condition", "dWT_1h", "dIF_1h")) # dWT/dIF -> higher in dWT: higher log2FC
+write.csv(PSS_result_dWT_dIF_1h[order(PSS_result_dWT_dIF_1h$padj),], file="Output/DESeq2_resultsTables/results_PSS-1h.csv")
+
+PSS_result_dWT_dIF_0h <- results(ddsMat_PSS, contrast=c("condition", "dWT_0h", "dIF_0h")) # dWT/dIF -> higher in dWT: higher log2FC
+write.csv(PSS_result_dWT_dIF_0h[order(PSS_result_dWT_dIF_0h$padj),], file="Output/DESeq2_resultsTables/results_PSS-0h.csv")
+
+PSS_result_dWT_0h_1h <- results(ddsMat_PSS, contrast=c("condition", "dWT_1h", "dWT_0h")) # dWT 1h/0h -> higher in 1h: higher log2FC
+write.csv(PSS_result_dWT_0h_1h[order(PSS_result_dWT_0h_1h$padj),], file="Output/DESeq2_resultsTables/results_PSS-dWT-0h-1h.csv")
+```
+
+```{r}
+indices_plus <- which(strand(PSS_nonReduced_Ranges)=="+")
+indices_minus <- which(strand(PSS_nonReduced_Ranges)=="-") 
+PSS_names <- c()
+PSS_names[indices_plus] <- paste(seqnames(PSS_nonReduced_Ranges[indices_plus]),start(PSS_nonReduced_Ranges[indices_plus]),"plus",sep="-")
+PSS_names[indices_minus] <- paste(seqnames(PSS_nonReduced_Ranges[indices_minus]),start(PSS_nonReduced_Ranges[indices_minus]),"minus",sep="-")
+rm(indices_plus)
+rm(indices_minus)
+PSS_nonReduced_Ranges$names <- PSS_names
+PSS_nonReduced_Ranges$featuresOverlap <- rep("", length(PSS_nonReduced_Ranges))
+PSS_nonReduced_Ranges$TU_overlap <- rep("", length(PSS_nonReduced_Ranges))
+for(i in 1:length(PSS_nonReduced_Ranges)){
+  PSS_nonReduced_Ranges$featuresOverlap[i] <- paste(features[which(countOverlaps(features,PSS_nonReduced_Ranges[i])>0)]$locus_tag,collapse=",")
+  PSS_nonReduced_Ranges$TU_overlap[i] <- paste(TUs[which(countOverlaps(TUs,PSS_nonReduced_Ranges[i])>0)]$index,collapse=",")
+}
+```
+
+```{r}
+# create tables with annotation: which features and TUs are overlapping with PSS?
+df_PSS_nonRed_Ranges <- as.data.frame(PSS_nonReduced_Ranges)
+row.names(df_PSS_nonRed_Ranges) <- df_PSS_nonRed_Ranges$names
+
+# PSS result dWT dIF at 1h
+PSS_result_dWT_dIF_1h_annot <- rownames_to_column(as.data.frame(PSS_result_dWT_dIF_1h[order(PSS_result_dWT_dIF_1h$padj),]))
+PSS_result_dWT_dIF_1h_annot$CDS <- df_PSS_nonRed_Ranges[PSS_result_dWT_dIF_1h_annot$rowname,]$featuresOverlap
+PSS_result_dWT_dIF_1h_annot$TUs <- df_PSS_nonRed_Ranges[PSS_result_dWT_dIF_1h_annot$rowname,]$TU_overlap
+PSS_result_dWT_dIF_1h_annot <- PSS_result_dWT_dIF_1h_annot[,c(8,9,1,2:7)]
+write_tsv(PSS_result_dWT_dIF_1h_annot, "Output/DESeq2_resultsTables/results_PSS-1h_annotated.tsv")
+
+# PSS result dWT dIF at 0h
+PSS_result_dWT_dIF_0h_annot <- rownames_to_column(as.data.frame(PSS_result_dWT_dIF_0h[order(PSS_result_dWT_dIF_0h$padj),]))
+PSS_result_dWT_dIF_0h_annot$CDS <- df_PSS_nonRed_Ranges[PSS_result_dWT_dIF_0h_annot$rowname,]$featuresOverlap
+PSS_result_dWT_dIF_0h_annot$TUs <- df_PSS_nonRed_Ranges[PSS_result_dWT_dIF_0h_annot$rowname,]$TU_overlap
+PSS_result_dWT_dIF_0h_annot <- PSS_result_dWT_dIF_0h_annot[,c(8,9,1,2:7)]
+write_tsv(PSS_result_dWT_dIF_0h_annot, "Output/DESeq2_resultsTables/results_PSS-0h_annotated.tsv")
+
+# PSS result dWT comparing 0h and 1h
+PSS_result_dWT_0h_1h_annot <- rownames_to_column(as.data.frame(PSS_result_dWT_0h_1h[order(PSS_result_dWT_0h_1h$padj),]))
+PSS_result_dWT_0h_1h_annot$CDS <- df_PSS_nonRed_Ranges[PSS_result_dWT_0h_1h_annot$rowname,]$featuresOverlap
+PSS_result_dWT_0h_1h_annot$TUs <- df_PSS_nonRed_Ranges[PSS_result_dWT_0h_1h_annot$rowname,]$TU_overlap
+PSS_result_dWT_0h_1h_annot <- PSS_result_dWT_0h_1h_annot[,c(8,9,1,2:7)]
+write_tsv(PSS_result_dWT_0h_1h_annot, "Output/DESeq2_resultsTables/results_PSS-dWT-0h-1h_annotated.tsv")
+```
+
+Run in respective Directory (output/DESeq2_resultsTables/)
+python    changeAnnotation_DESeq2.py results_PSS-1h_annotated.tsv results_PSS-1h_annotated-2.tsv
+python    changeAnnotation_DESeq2.py results_PSS-0h_annotated.tsv results_PSS-0h_annotated-2.tsv
+python    changeAnnotation_DESeq2.py results_PSS-dWT-0h-1h_annotated.tsv results_PSS-dWT-0h-1h_annotated-2.tsv
+
+```{r, fig.wide = TRUE}
+pvaluePlot(PSS_result_dWT_dIF_0h, "PSS 0h")
+pvaluePlot(PSS_result_dWT_dIF_1h, "PSS 1h")
+pvaluePlot(PSS_result_dWT_0h_1h, "PSS dWT 0h-1h")
+
+pdf(file="Output/DESeq2_Plots/ddsMat_PSS-0h_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(PSS_result_dWT_dIF_0h, "PSS 0h")
+dev.off()
+pdf(file="Output/DESeq2_Plots/ddsMat_PSS-1h_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(PSS_result_dWT_dIF_1h, "PSS 1h")
+dev.off()
+```
+
+```{r}
+PSS_result_dWT_dIF_0h <- subset(PSS_result_dWT_dIF_0h, !is.na(PSS_result_dWT_dIF_0h$padj))
+nrow(PSS_result_dWT_dIF_0h) #3,727
+
+PSS_result_dWT_dIF_1h <- subset(PSS_result_dWT_dIF_1h, !is.na(PSS_result_dWT_dIF_1h$padj))
+nrow(PSS_result_dWT_dIF_1h) #3,727
+
+PSS_result_dWT_0h_1h <- subset(PSS_result_dWT_0h_1h, !is.na(PSS_result_dWT_0h_1h$padj))
+nrow(PSS_result_dWT_0h_1h) #3,727
+```
+
+### PSS 0h 
+
+```{r, fig.wide = TRUE}
+count_up_down(PSS_result_dWT_dIF_0h, foldchange=1, padjusted=0.05)
+
+p <- volcanoPlot_ggplot(as.data.frame(PSS_result_dWT_dIF_0h), foldchange=1, padjusted=0.05)
+p
+ggsave("Output/DESeq2_Plots/ddsMat_PSS-0h_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+p <- MAplot_ggplot(PSS_result_dWT_dIF_0h, foldchange=1.0, y_axis_label = "Log2 fold-change(rne(WT)/rne(Ts))") + ylim(-5,+5)
+p
+ggsave("Output/DESeq2_Plots/ddsMat_PSS-0h_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+### PSS 1h
+
+```{r, fig.wide = TRUE}
+count_up_down(PSS_result_dWT_dIF_1h, foldchange=1, padjusted=0.05)
+
+p <- volcanoPlot_ggplot(as.data.frame(PSS_result_dWT_dIF_1h), foldchange=1, padjusted=0.05)
+p
+ggsave("Output/DESeq2_Plots/ddsMat_PSS-1h_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+p <- MAplot_ggplot(PSS_result_dWT_dIF_1h, foldchange=1.0, y_axis_label = "Log2 fold-change(rne(WT)/rne(Ts))") + ylim(-5,+5)
+p
+ggsave("Output/DESeq2_Plots/ddsMat_PSS-1h_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+### PSS heat treatment
+
+```{r}
+count_up_down(PSS_result_dWT_0h_1h, foldchange = 1, padjusted = 0.05)
+  
+p <- MAplot_ggplot(PSS_result_dWT_0h_1h, foldchange=1.0, y_axis_label = "Log2 fold-change(rne(WT) 1h/0h)") + ylim(-5,+5) + scale_colour_manual(values=c("DOWN"="black", "UP"="black", "NO"="#d3d3d3ff"))
+p
+ggsave("Output/DESeq2_Plots/ddsMat_PSS-rneWT-0h-1h_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+```{r, echo=FALSE}
+save.image(file = "multireads.RData")
+```
+```{r, echo=FALSE}
+#load("multireads.RData")
+```
+
+# Session info {.unnumbered}
+
+```{r sessionInfo, echo=FALSE}
+sessionInfo()
+```

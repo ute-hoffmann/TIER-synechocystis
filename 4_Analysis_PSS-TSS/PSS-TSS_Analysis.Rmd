@@ -1,0 +1,2520 @@
+---
+title: "Analyze PSS and TSS data of RNase E TIER-Seq experiment"
+author:
+- affiliation: AG Annegret Wilde, Institute of Biology III
+  name: "Ute Hoffmann"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    fig_width: 15
+    fig_height: 8
+    theme: united
+    toc: yes
+    number_sections: true
+  pdf_document:
+    toc: yes
+    number_sections: true
+bibliography: bibliography.bib
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+require("knitr")
+opts_knit$set(root.dir = "/data/Dokumente/uni/Doktorarbeit/20201010_TIER-Seq_Data/00_Manuscript/Code_final/4_Analysis_PSS-TSS/")
+library(tidyverse)
+library(DESeq2)
+library(edgeR)
+library(ggplot2)
+library(ggrepel)
+library(ggpubr)
+library(pheatmap)
+library(RColorBrewer)
+library(vsn)
+library(GenomicRanges)
+library(Biostrings)
+library(rtracklayer)
+library(viridis)
+library(colorblindr)
+library(clusterProfiler)
+```
+
+```{r, echo=FALSE}
+# Colors: (based on scale_fill_OkabeIto())
+# values=c("#e69f00ff", "#005a96ff") - e6... : rne(Ts), 005...: rne(WT)
+#c("#005a96b2", "#e69f00b2", "d3d3d3b2") # in transparency, d3d3d3b2 if none of both strains
+# Colours (ColorBrewer Dark2) for PSS / TSS:
+# values=c("PSS"="#4e9879ff", "TSS"="#c96928ff")
+
+# some functions which are incredibly handy
+
+#### Functions for plotting and handling DESeq2 objects
+
+count_up_down <- function(deseq2_dframe, foldchange=1, padjusted=0.01)
+{ # input: DESeq2 results object / data frame; foldchange and padjusted; returns numbers of features in DESeq2 results object differentially expressed according to cut-offs
+  deseq2_dframe <- as.data.frame(subset(deseq2_dframe, !is.na(deseq2_dframe$padj)))
+  # create vectors of down- or upregulated features, give out their numbers
+  down <- deseq2_dframe$log2FoldChange < -foldchange & deseq2_dframe$padj < padjusted
+  up <- deseq2_dframe$log2FoldChange > foldchange & deseq2_dframe$padj < padjusted
+  
+  print(paste("number of features down: ", sum(down)))
+  print(paste("number of features up: ", sum(up)))
+}
+
+return_up_down <- function(deseq2_dframe, foldchange=1, padjusted=0.01)
+{
+  deseq2_dframe <- subset(deseq2_dframe, !is.na(deseq2_dframe$padj))
+  # create vectors of down- or upregulated features, give out their numbers
+  down <- deseq2_dframe$log2FoldChange < -foldchange & deseq2_dframe$padj < padjusted
+  up <- deseq2_dframe$log2FoldChange > foldchange & deseq2_dframe$padj < padjusted
+  
+  vector_differentiallyExpressed <- c(row.names(deseq2_dframe)[down],row.names(deseq2_dframe)[up])
+  return(vector_differentiallyExpressed)
+}
+
+volcanoPlot_ggplot <-  function(deseq2_dframe, foldchange=1, padjusted=0.01, color=TRUE, text=FALSE, numbers=TRUE, lines_padj_FC=TRUE)
+{ # plots Volcano Plot for DESeq2 results object
+  # compare: https://biocorecrg.github.io/CRG_RIntroduction/volcano-plots.html
+  
+  # The significantly differentially expressed genes are the ones found in the upper-left and upper-right corners.
+  # Add a column to the data frame to specify if they are UP- or DOWN- regulated (log2FoldChange respectively positive or negative)
+  
+  # add a column of NAs
+  df_copy <- as.data.frame(deseq2_dframe)
+  df_copy$diffexpressed <- "NO"
+  # if log2Foldchange > 0.6 and pvalue < 0.05, set as "UP" 
+  df_copy$diffexpressed[df_copy$log2FoldChange > foldchange & df_copy$padj < padjusted] <- "UP"
+  # if log2Foldchange < -0.6 and pvalue < 0.05, set as "DOWN"
+  df_copy$diffexpressed[df_copy$log2FoldChange < -foldchange & df_copy$padj < padjusted] <- "DOWN"
+  
+  # prepare labels of plot
+  df_copy$delabel <- NA
+  df_copy$delabel[df_copy$diffexpressed != "NO"] <- row.names(df_copy)[df_copy$diffexpressed != "NO"]
+  
+  # Plot
+  p <- ggplot(data=df_copy, aes(x=log2FoldChange, y=-log10(padj), col=diffexpressed, label=delabel)) + geom_point(alpha=0.3, show.legend = FALSE) + 
+    theme_light() + labs(y="-Log10(p.adj_BH)", x="Log2FC") + theme(legend.position = "none")
+  
+  # color points
+  mycolors <- c("#e69f00b2","#005a96b2",  "#d3d3d3b2")
+  names(mycolors) <- c("DOWN", "UP", "NO")
+  p <- p + scale_colour_manual(values = mycolors)
+  
+  # Add vertical lines for log2FoldChange thresholds, and one horizontal line for the p-value threshold 
+  if(lines_padj_FC){
+    p <- p + geom_vline(xintercept=c(-foldchange, foldchange), linetype="dotted") +
+      geom_hline(yintercept=-log10(padjusted), linetype="dotted") # http://www.sthda.com/english/wiki/ggplot2-line-types-how-to-change-line-types-of-a-graph-in-r-software
+  }
+  
+  # Now write down the name of genes beside the points...
+  # Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+  if(text){
+    p <- p + geom_text_repel(fontface="italic")   #geom_text()
+  }
+  
+  return(p)
+}
+
+MAplot_ggplot <-  function(deseq2_dframe, foldchange=1, padjusted=0.05, color=TRUE, text=FALSE, numbers=TRUE, lines_padj_FC=TRUE, y_axis_label="Log2FC")
+{ # plots MAplot for DESeq2 results object
+  # add a column of NAs
+  df_copy <- as.data.frame(deseq2_dframe)
+  df_copy$diffexpressed <- "NO"
+  # if log2Foldchange > 0 and pvalue < 0.05, set as "UP" 
+  df_copy$diffexpressed[df_copy$log2FoldChange > 0 & df_copy$padj < padjusted] <- "UP"
+  # if log2Foldchange < 0 and pvalue < 0.05, set as "DOWN"
+  df_copy$diffexpressed[df_copy$log2FoldChange < 0 & df_copy$padj < padjusted] <- "DOWN"
+  
+  # prepare labels of plot
+  df_copy$delabel <- NA
+  df_copy$delabel[df_copy$diffexpressed != "NO"] <- row.names(df_copy)[df_copy$diffexpressed != "NO"]
+  
+  # Plot
+  p <- ggplot(data=df_copy, aes(x=baseMean, y=log2FoldChange, col=diffexpressed, label=delabel)) + geom_point(size=0.5, show.legend = FALSE) + 
+    theme_light() + labs(y=y_axis_label, x="Mean of Normalized Counts") + theme(legend.position = "none") + scale_x_continuous(trans='log10')
+  
+  # color points
+  mycolors <- c("#e69f00ff","#005a96ff",  "#d3d3d3ff")
+  names(mycolors) <- c("DOWN", "UP", "NO")
+  p <- p + scale_colour_manual(values = mycolors)
+  
+  # Add vertical lines for log2FoldChange thresholds, and one horizontal line for the p-value threshold 
+  if(lines_padj_FC){
+    p <- p + geom_hline(yintercept=c(-foldchange, 0, foldchange), linetype="dotted")
+  }
+  
+  # Now write down the name of genes beside the points...
+  # Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+  if(text){
+    p <- p + geom_text_repel(fontface="italic")   #geom_text()
+  }
+  
+  return(p)
+}
+
+PCA_plot <- function(dds, title){
+  # plots PCA for DESeq2 Data Set object, uses rlog, assumes DESeq2 data set object for dWT / dIF comparison at 0h / 1h 
+  rld <- rlog(dds)
+  pcaData <- plotPCA(rld, intgroup=c("strain", "treatment"), returnData=TRUE)
+  percentVar <- round(100 * attr(pcaData, "percentVar"))
+  ggplot(pcaData, aes(PC1, PC2, color=strain, shape=treatment)) +
+    geom_point(size=3) +
+    xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+    ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+    coord_fixed() + theme_light() + scale_color_manual(name="Strain", values=c("#005a96ff", "#e69f00ff"), breaks=c("dWT", "dIF"), labels=c("rne(WT)", "rne(Ts)")) + 
+    theme(legend.position="bottom", legend.box="vertical", legend.margin=margin(t=-0.2, r=0, b=0, l=0, unit="cm"))  + 
+    labs(title=title) + scale_shape_discrete(name="Heat", breaks=c("0h", "1h"), labels=c("0h", "1h"))
+}
+
+heatmap_plot <- function(dds, title){
+  # plots heat map for DESeq2 Data Set object, uses rlog
+  dat <- assay(rlog(dds))
+  dists_rl <- dist(t(dat))
+  mat <- as.matrix(dists_rl)
+  rownames(mat) <- c(rep(c("rne(Ts) 0h", "rne(Ts) 1h"), 3),rep(c("rne(WT) 0h", "rne(WT) 1h"), 3))
+  colnames(mat) <- NULL
+  colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+  pheatmap(
+    mat,
+    clustering_distance_rows = dists_rl,
+    clustering_distance_cols = dists_rl,
+    col = colors,
+    main = "Sample-to-sample distances"
+  )
+}
+
+PCA_plot_PSSTSS <- function(dds, title){
+  # plots PCA for PSS / TSS comparison of DESeq Data set
+  rld <- rlog(dds)
+  pcaData <- plotPCA(rld, intgroup=c("type", "condition"), returnData=TRUE)
+  percentVar <- round(100 * attr(pcaData, "percentVar"))
+  return(ggplot(pcaData, aes(PC1, PC2, color=condition, shape=type)) +
+    geom_point(size=3) +
+    xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+    ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+    coord_fixed() + theme_light() + scale_color_manual(name="", values=c("#ffb000ff", "#986800ff", "#0098ffff", "#003559ff"), breaks=c("dIF_0h", "dIF_1h", "dWT_0h", "dWT_1h"), labels=c("rne(Ts) 0h", "rne(Ts) 1h", "rne(WT) 0h", "rne(WT) 1h")) + 
+    theme(legend.position="bottom", legend.box="vertical", legend.margin=margin(t=-0.2, r=0, b=0, l=0, unit="cm")) +
+    labs(title=title) + scale_shape_discrete(name="", breaks=c("PSS", "TSS"), labels=c("PSS", "TSS")))
+}
+
+heatmap_plot_PSSTSS <- function(dds, title){
+  # plots heat map for PSS / TSS comparison of DESeq Data set
+  dat <- assay(rlog(dds))
+  dists_rl <- dist(t(dat))
+  mat <- as.matrix(dists_rl)
+  #rownames(mat) <- c(rep(c("rne(Ts) 0h", "rne(Ts) 1h"), 3),rep(c("rne(WT) 0h", "rne(WT) 1h"), 3))
+  colnames(mat) <- NULL
+  colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+  pheatmap(
+    mat,
+    clustering_distance_rows = dists_rl,
+    clustering_distance_cols = dists_rl,
+    col = colors,
+    main = "Sample-to-sample distances"
+  )
+}
+
+pvaluePlot <- function(result_object, title_plot){ 
+  # plots histogram of distribution of p values in DESeq2 results object
+  use <- result_object$baseMean > metadata(result_object)$filterThreshold
+  h1 <- hist(result_object$pvalue[!use], breaks=0:50/50, plot=FALSE)
+  h2 <- hist(result_object$pvalue[use], breaks=0:50/50, plot=FALSE)
+  colori <- c(`filtered (low count)`="khaki", `not filtered`="powderblue")
+  barplot(height = rbind(h1$counts, h2$counts), beside = FALSE,
+        col = colori, space = 0, main = paste("Histogram of p-values for", title_plot), ylab="Frequency", xlab="P-values")
+  text(x = c(0, length(h1$counts)), y = 0, label = paste(c(0,1)),
+     adj = c(0.5,1.7), xpd=NA)
+  legend("topright", fill=rev(colori), legend=rev(names(colori)))
+}
+
+#### Functions to work on GRanges objects
+create_GRanges_object <- function(pos_list, base_means){
+  # creates GRanges object from pos_list and adds additional info about base_means (base_means input as vector)
+  # input: pos_list: List of positions which should be used for GRanges object: each element in list: [1]: contig name, [2]: nt-position (=start/stop), [3]: strand information
+  # with some extra constructs (e.g. as.integer(map_chr(pos_list, pluck, 2)) one can work around for-construct, but it's slower https://rstudio-education.github.io/tidyverse-cookbook/transform-lists-and-vectors.html
+  
+  # initialise vectors
+  seq_names <- c()
+  starts <- c()
+  stops <- c()
+  strands <- c()
+
+  for(i in 1:length(pos_list)){
+    seq_names[i] <- pos_list[[i]][1]
+    starts[i] <- as.integer(pos_list[[i]][2])
+    stops[i] <- as.integer(pos_list[[i]][2])
+    if(pos_list[[i]][3]=="plus"){
+      strands[i] <- "+"
+    }else if(pos_list[[i]][3]=="minus"){
+      strands[i] <- "-"
+    }
+  }
+  
+  GRanges_object <- GRanges(seqnames=seq_names,
+      ranges=IRanges(starts, stops), strand=strands, baseMean=base_means)
+
+  return(GRanges_object)
+}
+
+create_GRanges_object_from_resObject <- function(DESeq2_resObject, foldchange, padjusted, up=TRUE){
+  # input: DESeq2 results object, + foldchange and padjusted cut-offs which should be used to only select certain set of positions, up=TRUE -> extract positions with log2FC > foldchange, else (up=FALSE) -> extract positions with log2FC < foldchange 
+  if(up){
+  subset_resObject <- subset(DESeq2_resObject, DESeq2_resObject$log2FoldChange>foldchange & DESeq2_resObject$padj < padjusted)
+  } else{
+  subset_resObject <- subset(DESeq2_resObject, DESeq2_resObject$log2FoldChange<foldchange & DESeq2_resObject$padj < padjusted)
+  }
+  positions<- base::strsplit(row.names(subset_resObject), "-")
+  rangesObject <- create_GRanges_object(positions, subset_resObject$baseMean)
+  return(rangesObject)
+}
+
+advanced_reduce <- function(rangesObject){
+  # function to reduce rangesObject (join adjacent positions to one longer position), and at same time trim positions with width > 0 to the one with highest population of reads (highest baseMean)
+  new_ranges <- GenomicRanges::reduce(rangesObject)
+  redundant_pos <- new_ranges[which(width(new_ranges)>1)]
+  
+  indices_new_ranges <- which(width(new_ranges)>1)
+  
+  starts <- start(new_ranges)
+  ends <- end(new_ranges)
+  strands <- strand(new_ranges)
+  seqname_vec <- seqnames(new_ranges)
+  
+  for(i in indices_new_ranges){
+      # extract baseMeans from original object    
+      ranges_index <- which(start(rangesObject) %in% starts[i]:ends[i] & strand(rangesObject)==strands[i] & seqnames(rangesObject)==seqname_vec[i])
+      baseMeans <- rangesObject[ranges_index]$baseMean
+      positions <- starts[i]:ends[i]
+  
+      start(new_ranges[i]) <- positions[which(baseMeans==max(baseMeans))]
+      end(new_ranges[i]) <- positions[which(baseMeans==max(baseMeans))]
+  }
+
+  return(new_ranges)
+}
+
+advanced_reduce_withBaseMeans <- function(rangesObject){
+  # function to reduce rangesObject (join adjacent positions to one longer position), and at same time trim positions with width > 0 to the one with highest population of reads (highest baseMean)
+  new_ranges <- GenomicRanges::reduce(rangesObject)
+  new_ranges$baseMeans <- NA
+  redundant_pos <- new_ranges[which(width(new_ranges)>1)]
+  
+  indices_new_ranges <- which(width(new_ranges)>1)
+  indices_new_ranges_width0 <- which(width(new_ranges)==1)
+  
+  starts <- start(new_ranges)
+  ends <- end(new_ranges)
+  strands <- strand(new_ranges)
+  seqname_vec <- seqnames(new_ranges)
+  
+  for(i in 1:length(new_ranges)){
+      # extract baseMeans from original object    
+      ranges_index <- which(start(rangesObject) %in% starts[i]:ends[i] & strand(rangesObject)==strands[i] & seqnames(rangesObject)==seqname_vec[i])
+      baseMeans <- rangesObject[ranges_index]$baseMean
+      positions <- starts[i]:ends[i]
+  
+      start(new_ranges[i]) <- positions[which(baseMeans==max(baseMeans))]
+      end(new_ranges[i]) <- positions[which(baseMeans==max(baseMeans))]
+      new_ranges[i]$baseMeans <- max(baseMeans)
+  }
+
+  return(new_ranges)
+}
+
+extract_RNA_sequences <- function(Ranges_object, sequence_object, len=10){
+  # function returns RNAStringSet with sequences centred around start positions - assumes width 1! Otherwise on minus strand: stop codon instead of start position!, +/- len (e.g. 10nt downstream + 10nt upstream), position len+1 in returned sequence corresponds to original start position
+  
+  if(sum(width(Ranges_object)>1)>0){
+    print("Attention! It seems as if not all features in the input Ranges object have width=1 - be aware that output RNA strings are centred around the start positions, irrespective if located on plus or minus strand!")
+  }
+  
+  # extract lengths of sequences
+  lengths <- c()
+  for(i in 1:length(sequence_object)){
+    lengths[i] <- width(sequence_object[i])
+  }
+  names(lengths) <- names(sequence_object)
+  
+  # extract info about what to extract
+  seqs <- as.character(data.frame(Ranges_object)[,1])
+  starts <- start(Ranges_object)
+  stops <- starts + len-1
+  starts <- starts -len
+  strands <- data.frame(Ranges_object)[,5]
+
+  # initialise vector
+  peak_set_plusMinus <- c("a")
+
+  # starts < 0
+  indices <- which(starts<0)
+  peak_set_plusMinus[indices] <- RNAStringSet(DNAStringSet(paste(subseq(sequence_object[seqs[indices]],start=lengths[seqs[indices]]-(-starts[indices]), end=lengths[seqs[indices]]),subseq(sequence_object[seqs[indices]],start=1, end=stops[indices]),sep="")))
+  
+  # stops > lengths
+  indices <- which(stops>lengths[seqs])
+  peak_set_plusMinus[indices] <- RNAStringSet(DNAStringSet(paste(subseq(sequence_object[seqs[indices]],start=starts[indices], end=lengths[seqs[indices]]),subseq(sequence_object[seqs[indices]],start=1, end=stops[indices]-lengths[seqs[indices]]),sep="")))
+
+  # rest
+  indices <- which(!(starts<0 | stops>lengths[seqs]))
+  peak_set_plusMinus[indices] <- RNAStringSet(subseq(sequence_object[seqs[indices]], start=starts[indices], end=stops[indices]))
+
+  # transform to RNAStringSet
+  peak_set_plusMinus <- RNAStringSet(peak_set_plusMinus)
+  
+  # include reverse Complement
+  indices <- which(strands=="-")
+  peak_set_plusMinus[indices] <- RNAStringSet(reverseComplement(peak_set_plusMinus[indices]))
+
+  names(peak_set_plusMinus) <- paste("peak", seq(1:length(peak_set_plusMinus)), sep="_")
+  
+  return(peak_set_plusMinus)
+}
+
+extract_DNA_sequences <- function(Ranges_object, sequence_object, len=10, only_upstream=FALSE){
+  # function returns DNAStringSet with sequences centred around positions - width taken into account, +/- len (e.g. 10nt downstream + 10nt upstream). If only_upstream = TRUE: only upstream sequence is returned
+  
+  # extract lengths of sequences
+  lengths <- c()
+  for(i in 1:length(sequence_object)){
+    lengths[i] <- width(sequence_object[i])
+  }
+  names(lengths) <- names(sequence_object)
+  
+  # extract info about what to extract
+  strands <- data.frame(Ranges_object)[,5]
+  seqs <- as.character(data.frame(Ranges_object)[,1])
+  stops <- c()
+  starts <- c()
+  if(only_upstream){
+    plus_strand <- which(strand(Ranges_object)=="+")
+    minus_strand <- which(strand(Ranges_object)=="-")
+    
+    stops[plus_strand] <- start(Ranges_object[plus_strand])
+    starts[plus_strand] <- start(Ranges_object[plus_strand])-len
+
+    starts[minus_strand] <- end(Ranges_object[minus_strand])
+    stops[minus_strand] <- end(Ranges_object[minus_strand])+len
+      
+  }else{
+    starts <- start(Ranges_object)
+    ends <- end(Ranges_object)
+    stops <- ends + len-1
+    starts <- starts -len
+  }
+
+  # initialise vector
+  peak_set_plusMinus <- c("a")
+
+  # starts < 0
+  indices <- which(starts<0)
+  peak_set_plusMinus[indices] <- DNAStringSet(paste(subseq(sequence_object[seqs[indices]],start=lengths[seqs[indices]]-(-starts[indices]), end=lengths[seqs[indices]]),subseq(sequence_object[seqs[indices]],start=1, end=stops[indices]),sep=""))
+  
+  # stops > lengths
+  indices <- which(stops>lengths[seqs])
+  peak_set_plusMinus[indices] <- DNAStringSet(paste(subseq(sequence_object[seqs[indices]],start=starts[indices], end=lengths[seqs[indices]]),subseq(sequence_object[seqs[indices]],start=1, end=stops[indices]-lengths[seqs[indices]]),sep=""))
+
+  # rest
+  indices <- which(!(starts<0 | stops>lengths[seqs]))
+  peak_set_plusMinus[indices] <- DNAStringSet(subseq(sequence_object[seqs[indices]], start=starts[indices], end=stops[indices]))
+
+  # transform to DNAStringSet
+  peak_set_plusMinus <- DNAStringSet(peak_set_plusMinus)
+  
+  # include reverse Complement
+  indices <- which(strands=="-")
+  peak_set_plusMinus[indices] <- DNAStringSet(reverseComplement(peak_set_plusMinus[indices]))
+
+  names(peak_set_plusMinus) <- paste("peak", seq(1:length(peak_set_plusMinus)), sep="_")
+  
+  return(peak_set_plusMinus)
+}
+
+
+## functions for functional enrichment
+
+# read in term_to_gene and term_to_name for enricher()
+term_to_gene <- read.table("input/20200113_locusTags_GOterms.tsv", sep="\t", header=T)
+tmp <- term_to_gene[,2]
+tmp2 <- term_to_gene[,1]
+term_to_gene[,1] <- tmp
+term_to_gene[,2] <- tmp2
+rm(tmp, tmp2)
+names(term_to_gene) <- c("GO_ID", "locus_tag")
+
+term_to_name <- read.delim("input/term_to_name.csv", sep="\t", header=T)
+
+# code functional enrichment function
+go_functional_enrichment_locusList <- function(list_of_genes, universe_tags, write=FALSE, path=""){
+  ego <- enricher(list_of_genes, universe=universe_tags, TERM2GENE = term_to_gene, TERM2NAME=term_to_name)
+  print(head(ego))
+  
+  if(write){
+    write.csv(ego, path)
+  }
+  return(ego)
+}
+
+kegg_functional_enrichment_locusList <- function(list_of_genes, universe_tags, write=FALSE, path=""){
+
+  ekegg <- enrichKEGG(gene         = list_of_genes,
+                               universe      = universe_tags,
+                               organism     = 'syn',
+                               pAdjustMethod = "BH",
+                               pvalueCutoff  = 0.05,
+                               qvalueCutoff  = 0.05)
+  print(ekegg[,1:7])
+  if(write){
+    write.csv(ekegg, path)
+  }
+  return(ekegg)
+}
+
+save_gff <- function(Ranges, file_path, basic_name){
+  rtracklayer::export(Ranges, paste(file_path, basic_name, "_all.gff", sep=""))
+  rtracklayer::export(subset(Ranges, seqnames(Ranges)=="BA000022.2"), paste(file_path, basic_name, "_chromo.gff", sep=""))
+  rtracklayer::export(subset(Ranges, seqnames(Ranges)=="AP004311.1"), paste(file_path, basic_name, "_pSYSA.gff", sep=""))
+  rtracklayer::export(subset(Ranges, seqnames(Ranges)=="AP004310.1"), paste(file_path, basic_name, "_pSYSM.gff", sep=""))
+  rtracklayer::export(subset(Ranges, seqnames(Ranges)=="AP004312.1"), paste(file_path, basic_name, "_pSYSG.gff", sep=""))
+  rtracklayer::export(subset(Ranges, seqnames(Ranges)=="AP006585.1"), paste(file_path, basic_name, "_pSYSX.gff", sep=""))
+}
+```
+
+# Aim of the analysis
+
+Aim of the analysis is to first identify processing sites (PSS) and transcriptional start sites (TSS). Using the set of PSS, processing sites dependent on RNase E will be identified by comparing which of those sites are enriched or depleted in a thermo-sensitive strain *rne*(Ts) (also called "dIF" in some subsequent analyses) compared to a wild-typic strain *rne*(WT) (also called "dWT" in some subsequent analyses) after 1 hour growth at 39°C (compare @chao_2017 and @rhodobacter_Tier).
+
+The sets of PSS and TSS will be compared to data by @kopf_2014 (in the following: "anno-TSS" and "TUs"). PSS dependent on RNase E will be analyzed for nucleotide composition, secondary structures, functional enrichment etc.
+
+```{r}
+#import gff for anno-TSS
+anno_TSS <- unique(rtracklayer::import("input/Kopf_TSS.gff")) # 14 int-TSS are duplicates and are also annotated as alt-TSS
+features <- rtracklayer::import("input/20210217_syne_onlyUnique_withFeat.gff3")
+TUs <- rtracklayer::import("input/Kopf_4091_TUs_combined.gff3")
+```
+
+# Identification and characterization of TSS and PSS sites
+
+## Identification of TSS and PSS using edgeR and DESeq2
+
+Input are tables of PSS and TSS 5' end counts prepared using a workflow on usegalaxy.eu and a python script. Sequencing data was created from libraries prepared similar to the protocol described in @Innocenti_2015 (tagRNA-Seq).
+
+```{r read-input}
+PSS_raw <- read.delim("input/PSS_5ends_combined.txt", header=TRUE, row.names=1)
+names(PSS_raw) <- paste(names(PSS_raw), "_PSS", sep="")
+TSS_raw <- read.delim("input/TSS_5ends_combined.txt", header=TRUE, row.names=1)
+names(TSS_raw) <- paste(names(TSS_raw), "_TSS", sep="")
+
+# merge PSS and TSS to merged_raw
+merged_raw <- merge(PSS_raw, TSS_raw, by="row.names")
+row.names(merged_raw) <- merged_raw$Row.names
+merged_raw$Row.names <- NULL
+rm(PSS_raw)
+rm(TSS_raw)
+```
+
+When taking into account lowly populated sites, DESeq2 dispersion estimates become over-fitted. Hence, edgeR::filterByExpression() is used as a pre-processing step before further DESeq2 analyses.
+
+```{r edgeR-filter}
+group=c(rep(c("dIF_0h_PSS", "dIF_1h_PSS"), 3), rep(c("dWT_0h_PSS", "dWT_1h_PSS"), 3), rep(c("dIF_0h_TSS", "dIF_1h_TSS"), 3), rep(c("dWT_0h_TSS", "dWT_1h_TSS"), 3))
+y <- DGEList(counts=merged_raw, group=group)
+nrow(y)
+keep <- filterByExpr(y)
+y <- y[keep, ,keep.lib.size=FALSE] #reduces from 7,894,038 positions to 11,265
+nrow(y)
+
+merged_filtered <- merged_raw[row.names(y$counts),]
+nrow(merged_filtered)
+rm(merged_raw)
+```
+
+Since TSS libraries are generally approximately 1.6 times larger than PSS libraries, size factors are determined separately for the different data set types. Size factors for TSS and PSS correlate quite well for different samples.
+
+```{r estimate-size-factors}
+coldata_PSS <- read.csv("input/20210216_colData_PSS.csv", row.names=1)
+coldata_TSS <- read.csv("input/20210216_colData_TSS.csv", row.names=1)
+
+# create DESeq2 data object
+ddsMat_PSS <- DESeqDataSetFromMatrix(countData = merged_filtered[,1:12],
+                                 colData = coldata_PSS,
+                                 design = ~ condition)
+ddsMat_TSS <- DESeqDataSetFromMatrix(countData = merged_filtered[,13:24],
+                                 colData = coldata_TSS,
+                                 design = ~ condition)
+
+# run DESeq
+ddsMat_PSS <- estimateSizeFactors(ddsMat_PSS) 
+ddsMat_TSS <- estimateSizeFactors(ddsMat_TSS) 
+
+# factors needed for creation of .grp file
+write.csv(data.frame(factor=ddsMat_PSS$sizeFactor), file="output/PSS_sizeFactors.csv")
+write.csv(data.frame(factor=ddsMat_TSS$sizeFactor), file="output/TSS_sizeFactors.csv")
+
+sizeFact <- c(ddsMat_PSS$sizeFactor, ddsMat_TSS$sizeFactor)
+plot(sizeFact[1:12], sizeFact[13:24], xlab="Size Factors PSS", ylab="Size Factors TSS")
+```
+
+In a subsequent step, DESeq2 is used to determine which positions are enriched in the TSS and PSS libraries, respectively. Size factors determined above are used.
+
+```{r PSSTSS-DESeq2-analysis}
+coldata <- read.csv("input/20210210_colData_PSS-TSS.csv", row.names=1)
+
+# create DESeq2 data object
+ddsMat_PSSTSS <- DESeqDataSetFromMatrix(countData = merged_filtered,
+                                 colData = coldata,
+                                 design = ~ condition + type)
+
+ddsMat_PSSTSS$sizeFactor <- sizeFact
+ddsMat_PSSTSS <- DESeq(ddsMat_PSSTSS)
+
+res_PSSTSS <- results(ddsMat_PSSTSS, contrast=c("type", "PSS", "TSS"))
+write.csv(res_PSSTSS[order(res_PSSTSS$padj),], file="output/DESeq2_resultsTables/results_PSS-TSS-copmarisons.csv")
+```
+
+As a next stop, a first unfiltered set of potential PSS and TSS positions is created:
+
+```{r PSSTSS-extract-DESeq2-results}
+PSS_positions_unfiltered <- row.names(subset(res_PSSTSS, res_PSSTSS$log2FoldChange>0.8 & res_PSSTSS$padj<0.05))
+TSS_positions_unfiltered <- row.names(subset(res_PSSTSS, res_PSSTSS$log2FoldChange<(-0.8) & res_PSSTSS$padj<0.05))
+```
+
+Create GRanges object for PSS data:
+
+```{r}
+PSS_nonReduced_Ranges <- create_GRanges_object(base::strsplit(PSS_positions_unfiltered, "-"), res_PSSTSS[PSS_positions_unfiltered,]$baseMean)
+PSS_nonReduced_Ranges$name <- PSS_positions_unfiltered
+PSS_nonReduced_Ranges$type <- "PSS"
+```
+
+### Diagnostic Plots
+
+```{r}
+pdf(file="output/DESeq2_Plots/ddsMat_PSSTSS_DispEsts.pdf", width=4.5, height=4.5)
+plotDispEsts(ddsMat_PSSTSS, xlab="Mean of Normalized Counts", ylab="Dispersion")
+dev.off()
+plotDispEsts(ddsMat_PSSTSS)
+```
+
+PSS and TSS data sets are separated on principal component 1, which captures 83% of the variance. Principal component 2 separates before/after heat treatment.
+
+```{r}
+p <- PCA_plot_PSSTSS(ddsMat_PSSTSS, "PSS-TSS")
+p
+ggsave("output/DESeq2_Plots/ddsMat_PSSTSS_PCA.pdf", plot=p, width=15, height=9, units="cm")
+```
+
+The same holds true when observing the respective heat plot.
+
+```{r}
+p <- heatmap_plot_PSSTSS(ddsMat_PSSTSS, "PSS-TSS")
+p
+ggsave("output/DESeq2_Plots/ddsMat_PSSTSS_heatMap.pdf", plot=p, width=15, height=12, units="cm")
+```
+
+Comparing PSS and TSS using DESeq2 yields a bimodal log2foldchange distribution. This underlines that PSS and TSS are quite well discernible using the chosen approach. This log2FC distribution is also observable in the non-normalized count data. This is further corroborated by the MAplot and also regarding p-values etc. (see below: Volcano plot and p-value-plot).
+
+```{r}
+pdf(file="output/DESeq2_Plots/ddsMat_PSSTSS_hist_log2FC.pdf", width=4.5, height=4.5)
+hist(res_PSSTSS$log2FoldChange, breaks=20, main="", xlab="Log2FC(PSS/TSS)", ylab="Frequency")
+dev.off()
+hist(res_PSSTSS$log2FoldChange, breaks=20, main="DESeq2 Normalization", xlab="Log2FC PSS/TSS", ylab="Frequency")
+
+# non-normalized
+log2_all <- log2(apply(merged_filtered[,1:12],1, mean)/apply(merged_filtered[,13:24],1,mean))
+hist(log2_all, breaks=20, main="No normalization", xlab="Log2(PSS/TSS)")
+
+p <- MAplot_ggplot(res_PSSTSS, foldchange=0.8, y_axis_label = "Log2 fold-change(PSS/TSS)")
+p <- p + scale_colour_manual(values=c("UP"="#4e9879ff", "DOWN"="#9b511fff", "NO"="#d3d3d3ff"))
+p
+ggsave("output/DESeq2_Plots/ddsMat_PSSTSS_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+```{r}
+res_PSSTSS <- subset(res_PSSTSS, !is.na(res_PSSTSS$padj))
+
+# down: TSS, up: PSS
+count_up_down(res_PSSTSS, foldchange=0.8, padjusted=0.05)
+p <- volcanoPlot_ggplot(res_PSSTSS, foldchange=0.8, padjusted=0.05) + scale_colour_manual(values=c("UP"="#4e9879ff", "DOWN"="#9b511fff", "NO"="#d3d3d3ff"))
+p
+ggsave("output/DESeq2_Plots/ddsMat_PSSTSS_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+pdf(file="output/DESeq2_Plots/ddsMat_PSSTSS_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(res_PSSTSS, "Comparison PSS to TSS")
+dev.off()
+pvaluePlot(res_PSSTSS, "Comparison PSS to TSS")
+```
+
+### Filter potential TSS-positions for positions with (TSS-reads)/(transcript-coverage)>0.02 and <2.0
+
+By inspecting the identified TSS, we observed that a high number of false-positive TSS positions are present in highly expressed genes. To control for this, we control for TSS with a ratio (number TSS-reads)/(number transcript reads) above a certain threshold. To determine this cut-off, we manually inspected highly expressed genomic positions such as the 5' UTR of *psbA2*, *ncr0700*, *ssrA* and *CRISPR3*. For instance for *psbA2*, the actual TSS are well established by independent experiments (@sakurai_positive_2012). 2% seemed to be a good cut-off for this control.
+
+Further, we introduced a cut-off to filter against TSS without associated transcription. The used library preparation protocol does not capture sRNAs with a length below 200nt and TSS without accompanying transcription might be TSS of sRNAs. However, we assume a high percentage of TSS which were identified without associated transcription are false positives, e.g. created by reverse transcription artefacts. An example is the second TSS upstream of PsbA2R. The actual TSS of the transcript was determined in @sakurai_positive_2012. We decided to filter out TSS for which the ratio (number TSS-reads)/(number transcript coverage) > 200%.
+
+First, transcript coverage data has to be read in and normalized:
+
+```{r filterTSS-positions}
+transcript_coverage <- read.delim("input/transcript_coverage_combined.txt", header=TRUE, row.names=1)
+
+group=c(rep(c("dIF_0h", "dIF_1h"), 3), rep(c("dWT_0h", "dWT_1h"), 3))
+y <- DGEList(counts=transcript_coverage, group=group)
+nrow(y)
+keep <- filterByExpr(y)
+y <- y[keep, ,keep.lib.size=FALSE] #reduces from 7,894,038 positions to 3,839,810
+nrow(y)
+
+transcript_coverage_filt <- transcript_coverage[row.names(y$counts),]
+rm(transcript_coverage) # remove to make space 
+
+coldata <- read.csv("input/colData_transcript.csv", row.names=1)
+
+# create DESeq2 data object
+ddsMat_transc <- DESeqDataSetFromMatrix(countData = transcript_coverage_filt,
+                                 colData = coldata,
+                                 design = ~ condition)
+
+ddsMat_transc <- estimateSizeFactors(ddsMat_transc)
+trans_norm <- as.data.frame(counts(ddsMat_transc, normalized=TRUE))
+TSS_norm <- as.data.frame(counts(ddsMat_TSS, normalized=TRUE))
+PSS_norm <- as.data.frame(counts(ddsMat_PSS, normalized=TRUE))
+```
+
+Do actual filtering: 
+
+```{r}
+TSS_trans_ratio_cutoff <- 0.02
+upper_TSS_trans_ratio_cutoff <- 2.00
+TSS_trans_ratio <- apply(TSS_norm[TSS_positions_unfiltered,],1,mean)/apply(trans_norm[TSS_positions_unfiltered,],1,mean)
+TSS_above_cutoff <- subset(TSS_positions_unfiltered, TSS_trans_ratio[TSS_positions_unfiltered]>TSS_trans_ratio_cutoff & TSS_trans_ratio[TSS_positions_unfiltered]<upper_TSS_trans_ratio_cutoff)
+TSS_nonReduced_Ranges <- create_GRanges_object(base::strsplit(TSS_above_cutoff, "-"), res_PSSTSS[TSS_above_cutoff,]$baseMean)
+TSS_nonReduced_Ranges$name <- TSS_above_cutoff
+length(reduce(TSS_nonReduced_Ranges))
+```
+
+For the actual analysis, we decided to only use TSS which are associated with a lot of evidence. Hence, we decided to only use those TSS, which are within a distance of 20nt of annotated TSS by @kopf_2014.
+
+```{r}
+highly_prob_TSS <- TSS_nonReduced_Ranges[which(countOverlaps(TSS_nonReduced_Ranges, anno_TSS, maxgap=20)>0)]
+names_prob_TSS <- highly_prob_TSS$name
+length(reduce(highly_prob_TSS))
+highly_prob_TSS$type <- "TSS"
+save_gff(c(highly_prob_TSS,PSS_nonReduced_Ranges), "output/annoTSS_comparison/gffs/highlyProbTSS/", "TSS_PSS_rneAnalysis")
+```
+
+## Characterization of newly identified TSS and PSS positions
+
+### Extract positions, reduce, export .gff
+
+For the characterization of newly identified TSS and PSS positions, also TSS which are not located in close proximity to TSS by @kopf_2014 were included.
+
+```{r}
+PSS_positions_Ranges <- GenomicRanges::reduce(PSS_nonReduced_Ranges)
+length(PSS_nonReduced_Ranges)
+length(PSS_positions_Ranges)
+length(PSS_positions_Ranges)/length(PSS_nonReduced_Ranges)
+```
+
+```{r}
+TSS_positions_Ranges <- GenomicRanges::reduce(TSS_nonReduced_Ranges)
+length(TSS_nonReduced_Ranges)
+length(TSS_positions_Ranges)
+length(TSS_positions_Ranges)/length(TSS_nonReduced_Ranges)
+```
+
+Export TSS and PSS positions as .gff:
+
+```{r create-gff}
+TSS_positions_Ranges$type <- "TSS"
+PSS_positions_Ranges$type <- "PSS"
+save_gff(c(TSS_positions_Ranges, PSS_positions_Ranges), "output/annoTSS_comparison/gffs/Filter_2perc_200perc/", "TSS_PSS_all")
+```
+
+```{r}
+p <- ggplot(data=as.data.frame(PSS_positions_Ranges), aes(x=width)) + geom_histogram(fill="darkgray", binwidth=1, color="darkgray") + theme_light() + xlab("Width of reported PSS") + ylab("Number of cases") + scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10))
+p 
+ggsave("output/annoTSS_comparison/hist_width_reported-PSS.pdf", plot=p, width=9, height=9, units="cm")
+
+p <- ggplot(data=as.data.frame(TSS_positions_Ranges), aes(x=width)) + geom_histogram(fill="darkgray", binwidth=1, color="darkgray") + theme_light() + xlab("Width of reported TSS") + ylab("Number of cases") + scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10), limits=c(0,10))
+p 
+ggsave("output/annoTSS_comparison/hist_width_reported-TSS.pdf", plot=p, width=9, height=9, units="cm")
+```
+
+### Count how many TSS and PSS overlap with anno-TSS
+
+```{r}
+write.csv(as.data.frame(PSS_positions_Ranges[which(countOverlaps(PSS_positions_Ranges, anno_TSS)>0)]), file="output/annoTSS_comparison/PSS_overlapping_annoTSS.csv")
+```
+
+```{r}
+# prepare data.frame to count numbers of TSS, PSS overlapping with anno-TSS
+df_overlap_TSSPSS <- as.data.frame(cbind(type=c(rep("PSS", 4), rep("TSS",4)), TSS=c(rep(c("start", "alt", "int", "i-start"), 2))))
+df_overlap_TSSPSS$number <- NA
+
+## count TSS, PSS overlapping with certain anno-TSS
+# overlap of start anno_TSS _without_ TU_type: i with PSS, TSS
+df_overlap_TSSPSS[df_overlap_TSSPSS$type=="PSS" & df_overlap_TSSPSS$TSS=="start",3] <- sum(countOverlaps(PSS_positions_Ranges, subset(anno_TSS, anno_TSS$TSS_type=="start" & !grepl("i", anno_TSS$TU_type, fixed = TRUE))))
+
+df_overlap_TSSPSS[df_overlap_TSSPSS$type=="TSS" & df_overlap_TSSPSS$TSS=="start",3] <- sum(countOverlaps(TSS_positions_Ranges, subset(anno_TSS, anno_TSS$TSS_type=="start" & !grepl("i", anno_TSS$TU_type, fixed = TRUE))))
+
+# overlap of start anno_TSS _with only_ TU_type: i with PSS, TSS
+df_overlap_TSSPSS[df_overlap_TSSPSS$type=="PSS" & df_overlap_TSSPSS$TSS=="i-start",3] <- sum(countOverlaps(PSS_positions_Ranges, subset(anno_TSS, anno_TSS$TSS_type=="start" & grepl("i", anno_TSS$TU_type, fixed = TRUE))))
+
+df_overlap_TSSPSS[df_overlap_TSSPSS$type=="TSS" & df_overlap_TSSPSS$TSS=="i-start",3] <- sum(countOverlaps(TSS_positions_Ranges, subset(anno_TSS, anno_TSS$TSS_type=="start" & grepl("i", anno_TSS$TU_type, fixed = TRUE))))
+
+# overlap of alt anno_TSS with PSS, TSS
+df_overlap_TSSPSS[df_overlap_TSSPSS$type=="PSS" & df_overlap_TSSPSS$TSS=="alt",3] <- sum(countOverlaps(PSS_positions_Ranges, subset(anno_TSS, anno_TSS$TSS_type=="alt")))
+df_overlap_TSSPSS[df_overlap_TSSPSS$type=="TSS" & df_overlap_TSSPSS$TSS=="alt",3] <- sum(countOverlaps(TSS_positions_Ranges, subset(anno_TSS, anno_TSS$TSS_type=="alt")))
+
+# overlap of int anno_TSS with PSS, TSS
+df_overlap_TSSPSS[df_overlap_TSSPSS$type=="PSS" & df_overlap_TSSPSS$TSS=="int",3] <- sum(countOverlaps(PSS_positions_Ranges, subset(anno_TSS, anno_TSS$TSS_type=="int")))
+df_overlap_TSSPSS[df_overlap_TSSPSS$type=="TSS" & df_overlap_TSSPSS$TSS=="int",3] <- sum(countOverlaps(TSS_positions_Ranges, subset(anno_TSS, anno_TSS$TSS_type=="int")))
+
+#control
+sum((countOverlaps(PSS_positions_Ranges, anno_TSS)>0))
+sum(df_overlap_TSSPSS[df_overlap_TSSPSS$type=="PSS",]$number)
+sum((countOverlaps(TSS_positions_Ranges,anno_TSS)>0))
+sum((countOverlaps(anno_TSS,TSS_positions_Ranges)>0)) # problem: anno_TSS are not unique - some alt and int TSS overlap. 
+sum(df_overlap_TSSPSS[df_overlap_TSSPSS$type=="TSS",]$number)
+```
+
+The majority of anno-TSS which overlap with PSS are not canonical start TSS, but actual int or alt TSS.
+
+```{r}
+p <- ggplot(data=df_overlap_TSSPSS, aes(x=type, y=number, fill=TSS)) + geom_bar(position="fill", stat="identity") + theme_light()+ xlab("") + ylab("Percentage") + scale_fill_grey(start = .2, end = .9)
+p
+ggsave(filename = "output/annoTSS_comparison/barplot_TSS-PSS-KopfTSS.pdf", plot = p, width = 7, height = 7, units = "cm")
+```
+
+Calculate how many PSS overlap with annotated regions:
+
+```{r}
+sum(countOverlaps(PSS_positions_Ranges,TUs)>0|countOverlaps(PSS_positions_Ranges,features)>0)/length(PSS_positions_Ranges)
+```
+
+Calculate number and percentage of TUs and CDS which are overlapped by captured PSS:
+
+```{r}
+sum(countOverlaps(TUs,PSS_positions_Ranges)>0)
+sum(countOverlaps(TUs,PSS_positions_Ranges)>0)/length(TUs)
+sum(countOverlaps(features,PSS_positions_Ranges)>0)
+sum(countOverlaps(features,PSS_positions_Ranges)>0)/length(features)
+```
+
+### Are TSS which do not overlap with anno-TSS lowly transcribed?
+
+Extract set of TSS overlapping and not-overlapping and extract baseMean-values:
+
+```{r extract-base-means_TSSpositions}
+not_overlapping_TSS <- TSS_positions_Ranges[which(countOverlaps(TSS_positions_Ranges, anno_TSS)==0)]
+overlapping_TSS <- TSS_positions_Ranges[which(countOverlaps(TSS_positions_Ranges, anno_TSS)>0)]
+
+not_overlapping_TSS$baseMeans <- NA
+
+for (i in 1:length(not_overlapping_TSS)){
+  if(as.logical(strand(not_overlapping_TSS[i])=="+")){
+      strand_sign <- "plus"
+    }else{
+      strand_sign <- "minus"
+    }
+  if(width(not_overlapping_TSS[i])>1){
+    baseMean_vector <- c()
+    for(j in start(not_overlapping_TSS[i]):end(not_overlapping_TSS[i])){
+      bm <- tryCatch({bm <- res_PSSTSS[paste(seqnames(not_overlapping_TSS[i]),start(not_overlapping_TSS[i]), strand_sign, sep="-"),]$baseMean}, error=function(e){return(0)})
+      baseMean_vector <- c(baseMean_vector, bm)
+    }
+    not_overlapping_TSS$baseMeans[i] <- max(baseMean_vector)
+  }else{
+    not_overlapping_TSS$baseMeans[i] <- res_PSSTSS[paste(seqnames(not_overlapping_TSS[i]),start(not_overlapping_TSS[i]), strand_sign, sep="-"),]$baseMean
+  }
+}
+
+overlapping_TSS$baseMeans <- NA
+for (i in 1:length(overlapping_TSS)){
+  if(as.logical(strand(overlapping_TSS[i])=="+")){
+      strand_sign <- "plus"
+    }else{
+      strand_sign <- "minus"
+    }
+  if(width(overlapping_TSS[i])>1){
+    baseMean_vector <- c()
+    for(j in start(overlapping_TSS[i]):end(overlapping_TSS[i])){
+      bm <- tryCatch({bm <- res_PSSTSS[paste(seqnames(overlapping_TSS[i]),start(overlapping_TSS[i]), strand_sign, sep="-"),]$baseMean}, error=function(e){return(0)})
+      baseMean_vector <- c(baseMean_vector, bm)
+    }
+    overlapping_TSS$baseMeans[i] <- max(baseMean_vector)
+  }else{
+    overlapping_TSS$baseMeans[i] <- res_PSSTSS[paste(seqnames(overlapping_TSS[i]),start(overlapping_TSS[i]), strand_sign, sep="-"),]$baseMean
+  }
+}
+```
+
+```{r}
+df_combined_histo <- data.frame(type=c(rep("Overlap", length(overlapping_TSS)), rep("No overlap", length(not_overlapping_TSS))), baseMean = c(overlapping_TSS$baseMeans, not_overlapping_TSS$baseMeans))
+
+p <- ggplot(data=df_combined_histo, aes(x=type, y=baseMean, fill=type)) + geom_violin() +
+  geom_boxplot(width=0.1, color="grey", alpha=0.2, outlier.shape=NA, show.legend = FALSE) +
+  scale_fill_viridis(discrete=TRUE, alpha=0.6, option="A") +
+  theme_light() +
+  labs(fill="", y="Base mean", x="") + scale_y_continuous(trans="log10")
+p 
+ggsave("output/annoTSS_comparison/violin_baseMeans_TSS.pdf", plot=p, width=9, height=9, units="cm")
+```
+
+
+```{r}
+summary(overlapping_TSS$baseMeans)
+summary(not_overlapping_TSS$baseMeans)
+```
+
+### Identify new TSSs and find out where new TSS are located
+
+To control for background noise: Remove TSS which are located within TUs or CDS: In highly transcribed regions, there is often some background TSS noise. Maybe this is not noise, but biologically relevant. However, I'd consider it as noise at the moment. So let's filter for TSS which are overlapping with TUs and CDSs.
+
+```{r}
+number_overlap_TSS.TUs.CDS <- sum((countOverlaps(not_overlapping_TSS, TUs)>0) | (countOverlaps(not_overlapping_TSS, features)>0))
+number_overlap_TSS.TUs.CDS
+number_overlap_TSS.TUs.CDS/length(not_overlapping_TSS)
+
+not_overlapping_TSS_2 <- subset(not_overlapping_TSS, (countOverlaps(not_overlapping_TSS, TUs)<1) & (countOverlaps(not_overlapping_TSS, features)<1))
+length(not_overlapping_TSS_2)
+```
+
+TSS should be localized mainly upstream of TUs or CDS. Hence: Identify TSS which are localized within a range 150nt upstream of CDS or TU start positions. First: Create GRanges objects of TUs and features which also contain 150nt upstream regions:
+
+```{r}
+TU_plus <- which(strand(TUs)=="+")
+TU_minus <- which(strand(TUs)=="-")
+TUs_beforeStart <- TUs
+end(TUs_beforeStart[TU_plus]) <- start(TUs_beforeStart[TU_plus])
+start(TUs_beforeStart[TU_plus]) <- start(TUs_beforeStart[TU_plus])-150
+
+start(TUs_beforeStart[TU_minus]) <- end(TUs_beforeStart[TU_minus])
+end(TUs_beforeStart[TU_minus]) <- end(TUs_beforeStart[TU_minus])+150
+
+feature_plus <- which(strand(features)=="+")
+feature_minus <- which(strand(features)=="-")
+features_beforeStart <- features
+end(features_beforeStart[feature_plus]) <- start(features_beforeStart[feature_plus])
+start(features_beforeStart[feature_plus]) <- start(features_beforeStart[feature_plus])-150
+
+start(features_beforeStart[feature_minus]) <- end(features_beforeStart[feature_minus])
+end(features_beforeStart[feature_minus]) <- end(features_beforeStart[feature_minus])+150
+```
+
+Count actual overlaps:
+
+```{r}
+number_overlap_TSS.TUs.CDS <- sum((countOverlaps(not_overlapping_TSS_2, TUs_beforeStart)>0) | (countOverlaps(not_overlapping_TSS_2, features_beforeStart)>0))
+number_overlap_TSS.TUs.CDS 
+number_overlap_TSS.TUs.CDS/length(not_overlapping_TSS_2) 
+
+not_overlapping_TSS_3 <- subset(not_overlapping_TSS_2, (countOverlaps(not_overlapping_TSS_2, TUs_beforeStart)<1) & (countOverlaps(not_overlapping_TSS_2, features_beforeStart)<1))
+length(not_overlapping_TSS_3) 
+```
+
+Join newly identified TSS within a certain distance and extract baseMeans of newly identified TSS: is majority really low? How many have baseMean > 20?
+
+```{r}
+not_overlapping_TSS_4 <- GenomicRanges::reduce(not_overlapping_TSS_3, min.gapwidth=20)
+not_overlapping_TSS_4$baseMeans <- NA
+length(not_overlapping_TSS_4)
+
+for (i in 1:length(not_overlapping_TSS_4)){
+  if(as.logical(strand(not_overlapping_TSS_4[i])=="+")){
+      strand_sign <- "plus"
+    }else{
+      strand_sign <- "minus"
+    }
+  if(width(not_overlapping_TSS_4[i])>1){
+    baseMean_vector <- c()
+    for(j in start(not_overlapping_TSS_4[i]):end(not_overlapping_TSS_4[i])){
+      bm <- tryCatch({bm <- res_PSSTSS[paste(seqnames(not_overlapping_TSS_4[i]),start(not_overlapping_TSS_4[i]), strand_sign, sep="-"),]$baseMean}, error=function(e){return(0)})
+      baseMean_vector <- c(baseMean_vector, bm)
+    }
+    not_overlapping_TSS_4$baseMeans[i] <- max(baseMean_vector)
+  }else{
+    not_overlapping_TSS_4$baseMeans[i] <- res_PSSTSS[paste(seqnames(not_overlapping_TSS_4[i]),start(not_overlapping_TSS_4[i]), strand_sign, sep="-"),]$baseMean
+  }
+}
+
+```
+
+```{r}
+hist(not_overlapping_TSS_4$baseMeans)
+sum(not_overlapping_TSS_4$baseMeans < 20)
+sum(not_overlapping_TSS_4$baseMeans < 20)/length(not_overlapping_TSS_4)
+sum(not_overlapping_TSS_4$baseMeans >= 20)
+sum(not_overlapping_TSS_4$baseMeans >= 20)/length(not_overlapping_TSS_4)
+write.csv(as.data.frame(not_overlapping_TSS_4[which(not_overlapping_TSS_4$baseMeans>=20)]), file="output/annoTSS_comparison/notOverlapping_over20.csv")
+write.csv(as.data.frame(not_overlapping_TSS_4[which(not_overlapping_TSS_4$baseMeans<20)]), file="output/annoTSS_comparison/notOverlapping_under20.csv")
+```
+
+### Extract DNA sequences upstream of TSS and upstream + downstream of PSS
+
+```{r}
+syne_fasta <- readDNAStringSet("input/Synechocystis.fasta", format="fasta")
+```
+
+The DNA sequences extracted in the following encompass all positions, i.e. also the ones where TSS or PSS are located at exactly adjacent positions in the genome. They can be used for MEME or MEME-ChIP analyses.
+
+```{r}
+TSS_overlapping_DNA_sequences <- extract_DNA_sequences(overlapping_TSS, syne_fasta, len=50, only_upstream=TRUE)
+TSS_not_overlapping_DNA_sequences <- extract_DNA_sequences(not_overlapping_TSS, syne_fasta, len=50, only_upstream=TRUE)
+TSS_all_DNA_sequences <- extract_DNA_sequences(TSS_positions_Ranges, syne_fasta, len=50, only_upstream=TRUE)
+PSS_DNA_sequences_50nt <- extract_DNA_sequences(PSS_positions_Ranges, syne_fasta, len=50, only_upstream=FALSE)
+
+writeXStringSet(TSS_overlapping_DNA_sequences, "output/annoTSS_comparison/weblogos/50nt_MEME-ChIP/TSS_overlapping_50nt.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(TSS_not_overlapping_DNA_sequences, "output/annoTSS_comparison/weblogos/50nt_MEME-ChIP/TSS_not_overlapping_50nt.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(TSS_all_DNA_sequences, "output/annoTSS_comparison/weblogos/50nt_MEME-ChIP/TSS_all_50nt.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(PSS_DNA_sequences_50nt, "output/annoTSS_comparison/weblogos/50nt_MEME-ChIP/PSS_50nt.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+```
+
+The following chunk of code filters TSS and PSS positions, so that the resulting GRanges objects only encompass TSS/PSS positions which are the most populated in a TSS/PSS region (a stretch of directly adjacent TSS/PSS).
+
+```{r}
+not_overlapping_TSS_advRed <- advanced_reduce(TSS_nonReduced_Ranges[which(countOverlaps(TSS_nonReduced_Ranges, anno_TSS)==0)])
+overlapping_TSS_advRed <- advanced_reduce(TSS_nonReduced_Ranges[which(countOverlaps(TSS_nonReduced_Ranges, anno_TSS)>0)])
+TSS_advReduce_Ranges <- advanced_reduce(TSS_nonReduced_Ranges)
+PSS_advReduce_Ranges <- advanced_reduce(PSS_nonReduced_Ranges)
+```
+
+Actually interesting stuff is only happening in region -20 nt upstream: Hence, only extract this region.
+
+```{r}
+TSS_overlapping_DNA_sequences_advRed <- extract_DNA_sequences(overlapping_TSS_advRed, syne_fasta, len=20, only_upstream=TRUE)
+TSS_not_overlapping_DNA_sequences_advRed <- extract_DNA_sequences(not_overlapping_TSS_advRed, syne_fasta, len=20, only_upstream=TRUE)
+TSS_DNA_sequences_40nt <- extract_DNA_sequences(TSS_advReduce_Ranges, syne_fasta, len=20, only_upstream=TRUE)
+PSS_DNA_sequences_40nt <- extract_DNA_sequences(PSS_advReduce_Ranges, syne_fasta, len=20, only_upstream=TRUE)
+PSS_DNA_sequences <- extract_DNA_sequences(PSS_advReduce_Ranges, syne_fasta, len=10, only_upstream=FALSE)
+
+writeXStringSet(TSS_overlapping_DNA_sequences_advRed, "output/annoTSS_comparison/weblogos/TSS_overlapping_20nt_forWeblogo.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(TSS_not_overlapping_DNA_sequences_advRed, "output/annoTSS_comparison/weblogos/TSS_not_overlapping_20nt_forWeblogo.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(TSS_DNA_sequences_40nt, "output/annoTSS_comparison/weblogos/allTSS_20nt_forWeblogo.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(PSS_DNA_sequences_40nt, "output/annoTSS_comparison/weblogos/PSS_20nt_forWeblogo.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(PSS_DNA_sequences, "output/annoTSS_comparison/weblogos/PSS_10nt_forWeblogo_upAndDownstream.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+```
+
+run createWeblogos_10-20nt_DNA.txt for creation of sequence logos
+
+# Use newly identified sets of TSS and PSS for identifying differentially expressed positions between *rne*(WT) and *rne*(Ts)
+
+```{r read-in-PSS-TSS-perform-DESeq2}
+PSS_raw <- read.delim("input/PSS_5ends_combined.txt", header=TRUE, row.names=1)
+PSS_use <- PSS_raw[PSS_positions_unfiltered,]
+
+TSS_raw <- read.delim("input/TSS_5ends_combined.txt", header=TRUE, row.names=1)
+TSS_use <- TSS_raw[names_prob_TSS,]
+
+rm(PSS_raw)
+rm(TSS_raw)
+
+coldata <- read.csv("input/20210125_colData.csv", row.names=1)
+
+ddsMat_PSS <- DESeqDataSetFromMatrix(countData = PSS_use,
+                                 colData = coldata,
+                                 design = ~ condition)
+
+ddsMat_TSS <- DESeqDataSetFromMatrix(countData = TSS_use,
+                                 colData = coldata,
+                                 design = ~ condition)
+
+ddsMat_PSS <- DESeq(ddsMat_PSS) 
+ddsMat_TSS <- DESeq(ddsMat_TSS) 
+```
+
+```{r export-normlized-readFiles}
+write.csv(data.frame(counts(ddsMat_PSS, normalized=TRUE)), file="output/PSS_normalizedCounts.csv")
+write.csv(data.frame(counts(ddsMat_TSS, normalized=TRUE)), file="output/TSS_normalizedCounts.csv")
+```
+
+## Diagnostic Plots
+
+```{r}
+pdf(file="output/DESeq2_Plots/ddsMat_PSS_DispEsts.pdf", width=4.5, height=4.5)
+plotDispEsts(ddsMat_PSS, main="PSS comparison", xlab="Mean of Normalized Counts", ylab="Dispersion")
+dev.off()
+pdf(file="output/DESeq2_Plots/ddsMat_TSS_DispEsts.pdf", width=4.5, height=4.5)
+plotDispEsts(ddsMat_TSS, main="TSS comparison", xlab="Mean of Normalized Counts", ylab="Dispersion")
+dev.off()
+plotDispEsts(ddsMat_PSS, main="PSS comparison", xlab="Mean of Normalized Counts", ylab="Dispersion")
+plotDispEsts(ddsMat_TSS, main="TSS comparison", xlab="Mean of Normalized Counts", ylab="Dispersion")
+```
+
+```{r}
+p <- PCA_plot(ddsMat_PSS, "PSS")
+p 
+ggsave("output/DESeq2_Plots/ddsMat_PSS_PCA.pdf", plot=p, width=9, height=9, units="cm")
+
+p <- PCA_plot(ddsMat_TSS, "TSS")
+p
+ggsave("output/DESeq2_Plots/ddsMat_TSS_PCA.pdf", plot=p, width=9, height=9, units="cm")
+
+p <- heatmap_plot(ddsMat_PSS, "PSS")
+p
+ggsave("output/DESeq2_Plots/ddsMat_PSS_heatMap.pdf", plot=p, width=15, height=12, units="cm")
+
+p <- heatmap_plot(ddsMat_TSS, "TSS")
+p
+ggsave("output/DESeq2_Plots/ddsMat_TSS_heatMap.pdf", plot=p, width=15, height=12, units="cm")
+```
+
+## Extract Results
+
+```{r}
+# extract results
+PSS_result_dWT_dIF_1h <- results(ddsMat_PSS, contrast=c("condition", "dWT_1h", "dIF_1h")) # dWT/dIF -> higher in dWT: higher log2FC
+write.csv(PSS_result_dWT_dIF_1h[order(PSS_result_dWT_dIF_1h$padj),], file="output/DESeq2_resultsTables/results_PSS-1h.csv")
+
+PSS_result_dWT_dIF_0h <- results(ddsMat_PSS, contrast=c("condition", "dWT_0h", "dIF_0h")) # dWT/dIF -> higher in dWT: higher log2FC
+write.csv(PSS_result_dWT_dIF_0h[order(PSS_result_dWT_dIF_0h$padj),], file="output/DESeq2_resultsTables/results_PSS-0h.csv")
+
+PSS_result_dWT_0h_1h <- results(ddsMat_PSS, contrast=c("condition", "dWT_1h", "dWT_0h")) # dWT 1h/0h -> higher in 1h: higher log2FC
+write.csv(PSS_result_dWT_0h_1h[order(PSS_result_dWT_0h_1h$padj),], file="output/DESeq2_resultsTables/results_PSS-dWT-0h-1h.csv")
+
+PSS_result_dIF_0h_1h <- results(ddsMat_PSS, contrast=c("condition", "dIF_1h", "dIF_0h")) # dIF 1h/0h -> higher in 1h: higher log2FC
+write.csv(PSS_result_dIF_0h_1h[order(PSS_result_dIF_0h_1h$padj),], file="output/DESeq2_resultsTables/results_PSS-dIF-0h-1h.csv")
+
+TSS_result_dWT_dIF_1h <- results(ddsMat_TSS, contrast=c("condition", "dWT_1h", "dIF_1h")) # dWT/dIF -> higher in dWT: higher log2FC
+write.csv(TSS_result_dWT_dIF_1h[order(TSS_result_dWT_dIF_1h$padj),], file="output/DESeq2_resultsTables/results_TSS-1h.csv")
+
+TSS_result_dWT_dIF_0h <- results(ddsMat_TSS, contrast=c("condition", "dWT_0h", "dIF_0h")) # dWT/dIF -> higher in dWT: higher log2FC
+write.csv(TSS_result_dWT_dIF_0h[order(TSS_result_dWT_dIF_0h$padj),], file="output/DESeq2_resultsTables/results_TSS-0h.csv")
+
+TSS_result_dWT_0h_1h <- results(ddsMat_TSS, contrast=c("condition", "dWT_1h", "dWT_0h")) # dWT 1h/0h -> higher in 1h: higher log2FC
+write.csv(TSS_result_dWT_0h_1h[order(TSS_result_dWT_0h_1h$padj),], file="output/DESeq2_resultsTables/results_TSS-dWT-0h-1h.csv")
+```
+
+Annotate peak regions
+
+```{r}
+indices_plus <- which(strand(PSS_nonReduced_Ranges)=="+")
+indices_minus <- which(strand(PSS_nonReduced_Ranges)=="-") 
+PSS_names <- c()
+PSS_names[indices_plus] <- paste(seqnames(PSS_nonReduced_Ranges[indices_plus]),start(PSS_nonReduced_Ranges[indices_plus]),"plus",sep="-")
+PSS_names[indices_minus] <- paste(seqnames(PSS_nonReduced_Ranges[indices_minus]),start(PSS_nonReduced_Ranges[indices_minus]),"minus",sep="-")
+rm(indices_plus)
+rm(indices_minus)
+PSS_nonReduced_Ranges$names <- PSS_names
+PSS_nonReduced_Ranges$featuresOverlap <- rep("", length(PSS_nonReduced_Ranges))
+PSS_nonReduced_Ranges$TU_overlap <- rep("", length(PSS_nonReduced_Ranges))
+for(i in 1:length(PSS_nonReduced_Ranges)){
+  PSS_nonReduced_Ranges$featuresOverlap[i] <- paste(features[which(countOverlaps(features,PSS_nonReduced_Ranges[i])>0)]$locus_tag,collapse=",")
+  PSS_nonReduced_Ranges$TU_overlap[i] <- paste(TUs[which(countOverlaps(TUs,PSS_nonReduced_Ranges[i])>0)]$index,collapse=",")
+}
+```
+
+```{r}
+# create tables with annotation: which features and TUs are overlapping with PSS?
+df_PSS_nonRed_Ranges <- as.data.frame(PSS_nonReduced_Ranges)
+row.names(df_PSS_nonRed_Ranges) <- df_PSS_nonRed_Ranges$names
+
+# PSS result dWT dIF at 1h
+PSS_result_dWT_dIF_1h_annot <- rownames_to_column(as.data.frame(PSS_result_dWT_dIF_1h[order(PSS_result_dWT_dIF_1h$padj),]))
+PSS_result_dWT_dIF_1h_annot$CDS <- df_PSS_nonRed_Ranges[PSS_result_dWT_dIF_1h_annot$rowname,]$featuresOverlap
+PSS_result_dWT_dIF_1h_annot$TUs <- df_PSS_nonRed_Ranges[PSS_result_dWT_dIF_1h_annot$rowname,]$TU_overlap
+PSS_result_dWT_dIF_1h_annot <- PSS_result_dWT_dIF_1h_annot[,c(8,9,1,2:7)]
+write_tsv(PSS_result_dWT_dIF_1h_annot, "output/DESeq2_resultsTables/results_PSS-1h_annotated.tsv")
+
+# PSS result dWT dIF at 0h
+PSS_result_dWT_dIF_0h_annot <- rownames_to_column(as.data.frame(PSS_result_dWT_dIF_0h[order(PSS_result_dWT_dIF_0h$padj),]))
+PSS_result_dWT_dIF_0h_annot$CDS <- df_PSS_nonRed_Ranges[PSS_result_dWT_dIF_0h_annot$rowname,]$featuresOverlap
+PSS_result_dWT_dIF_0h_annot$TUs <- df_PSS_nonRed_Ranges[PSS_result_dWT_dIF_0h_annot$rowname,]$TU_overlap
+PSS_result_dWT_dIF_0h_annot <- PSS_result_dWT_dIF_0h_annot[,c(8,9,1,2:7)]
+write_tsv(PSS_result_dWT_dIF_0h_annot, "output/DESeq2_resultsTables/results_PSS-0h_annotated.tsv")
+
+# PSS result dWT comparing 0h and 1h
+PSS_result_dWT_0h_1h_annot <- rownames_to_column(as.data.frame(PSS_result_dWT_0h_1h[order(PSS_result_dWT_0h_1h$padj),]))
+PSS_result_dWT_0h_1h_annot$CDS <- df_PSS_nonRed_Ranges[PSS_result_dWT_0h_1h_annot$rowname,]$featuresOverlap
+PSS_result_dWT_0h_1h_annot$TUs <- df_PSS_nonRed_Ranges[PSS_result_dWT_0h_1h_annot$rowname,]$TU_overlap
+PSS_result_dWT_0h_1h_annot <- PSS_result_dWT_0h_1h_annot[,c(8,9,1,2:7)]
+write_tsv(PSS_result_dWT_0h_1h_annot, "output/DESeq2_resultsTables/results_PSS-dWT-0h-1h_annotated.tsv")
+
+# PSS result dIF comparing 0h and 1h
+PSS_result_dIF_0h_1h_annot <- rownames_to_column(as.data.frame(PSS_result_dIF_0h_1h[order(PSS_result_dIF_0h_1h$padj),]))
+PSS_result_dIF_0h_1h_annot$CDS <- df_PSS_nonRed_Ranges[PSS_result_dIF_0h_1h_annot$rowname,]$featuresOverlap
+PSS_result_dIF_0h_1h_annot$TUs <- df_PSS_nonRed_Ranges[PSS_result_dIF_0h_1h_annot$rowname,]$TU_overlap
+PSS_result_dIF_0h_1h_annot <- PSS_result_dIF_0h_1h_annot[,c(8,9,1,2:7)]
+write_tsv(PSS_result_dIF_0h_1h_annot, "output/DESeq2_resultsTables/results_PSS-dIF-0h-1h_annotated.tsv")
+```
+
+Run in respective Directory (output/DESeq2_resultsTables/)
+python    changeAnnotation_DESeq2.py results_PSS-1h_annotated.tsv results_PSS-1h_annotated-2.tsv
+python    changeAnnotation_DESeq2.py results_PSS-0h_annotated.tsv results_PSS-0h_annotated-2.tsv
+python    changeAnnotation_DESeq2.py results_PSS-dWT-0h-1h_annotated.tsv results_PSS-dWT-0h-1h_annotated-2.tsv
+python    changeAnnotation_DESeq2.py results_PSS-dIF-0h-1h_annotated.tsv results_PSS-dIF-0h-1h_annotated-2.tsv
+
+```{r, fig.wide = TRUE}
+pdf(file="output/DESeq2_Plots/ddsMat_PSS-0h_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(PSS_result_dWT_dIF_0h, "PSS 0h")
+dev.off()
+pdf(file="output/DESeq2_Plots/ddsMat_PSS-1h_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(PSS_result_dWT_dIF_1h, "PSS 1h")
+dev.off()
+pdf(file="output/DESeq2_Plots/ddsMat_TSS-0h_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(TSS_result_dWT_dIF_0h, "TSS 0h")
+dev.off()
+pdf(file="output/DESeq2_Plots/ddsMat_TSS-1h_pValuePlot.pdf", width=4.5, height=4.5)
+pvaluePlot(TSS_result_dWT_dIF_1h, "TSS 1h")
+dev.off()
+pvaluePlot(PSS_result_dWT_dIF_0h, "PSS 0h")
+pvaluePlot(PSS_result_dWT_dIF_1h, "PSS 1h")
+pvaluePlot(PSS_result_dWT_0h_1h, "PSS dWT 0h-1h")
+pvaluePlot(PSS_result_dIF_0h_1h, "PSS dIF 0h-1h")
+pvaluePlot(TSS_result_dWT_dIF_0h, "TSS 0h")
+pvaluePlot(TSS_result_dWT_dIF_1h, "TSS 1h")
+pvaluePlot(TSS_result_dWT_0h_1h, "TSS dWT 0h-1h")
+```
+
+Filter out PSS below filter level of results(). For these, p.adj is set to NA - hence: remove positions at which p.adj==NA
+
+```{r}
+PSS_result_dWT_dIF_0h <- subset(PSS_result_dWT_dIF_0h, !is.na(PSS_result_dWT_dIF_0h$padj))
+PSS_result_dWT_dIF_1h <- subset(PSS_result_dWT_dIF_1h, !is.na(PSS_result_dWT_dIF_1h$padj))
+PSS_result_dWT_0h_1h <- subset(PSS_result_dWT_0h_1h, !is.na(PSS_result_dWT_0h_1h$padj))
+PSS_result_dIF_0h_1h <- subset(PSS_result_dIF_0h_1h, !is.na(PSS_result_dIF_0h_1h$padj))
+TSS_result_dWT_dIF_0h <- subset(TSS_result_dWT_dIF_0h, !is.na(TSS_result_dWT_dIF_0h$padj))
+TSS_result_dWT_dIF_1h <- subset(TSS_result_dWT_dIF_1h, !is.na(TSS_result_dWT_dIF_1h$padj))
+TSS_result_dWT_0h_1h <- subset(TSS_result_dWT_0h_1h, !is.na(TSS_result_dWT_0h_1h$padj))
+```
+
+### PSS 0h 
+
+```{r, fig.wide = TRUE}
+count_up_down(PSS_result_dWT_dIF_0h, foldchange=1, padjusted=0.05)
+
+p <- volcanoPlot_ggplot(as.data.frame(PSS_result_dWT_dIF_0h), foldchange=1, padjusted=0.05)
+p
+ggsave("output/DESeq2_Plots/ddsMat_PSS-0h_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+p <- MAplot_ggplot(PSS_result_dWT_dIF_0h, foldchange=1.0, y_axis_label = "Log2 fold-change(rne(WT)/rne(Ts))") + ylim(-5,+5)
+p
+ggsave("output/DESeq2_Plots/ddsMat_PSS-0h_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+### PSS 1h
+
+```{r, fig.wide = TRUE}
+count_up_down(PSS_result_dWT_dIF_1h, foldchange=1, padjusted=0.05)
+
+p <- volcanoPlot_ggplot(as.data.frame(PSS_result_dWT_dIF_1h), foldchange=1, padjusted=0.05)
+p
+ggsave("output/DESeq2_Plots/ddsMat_PSS-1h_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+p <- MAplot_ggplot(PSS_result_dWT_dIF_1h, foldchange=1.0, y_axis_label = "Log2 fold-change(rne(WT)/rne(Ts))") + ylim(-5,+5)
+p
+ggsave("output/DESeq2_Plots/ddsMat_PSS-1h_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+### PSS heat treatment
+
+In *rne*(WT):
+
+```{r}
+count_up_down(PSS_result_dWT_0h_1h, foldchange = 1, padjusted = 0.05)
+  
+p <- MAplot_ggplot(PSS_result_dWT_0h_1h, foldchange=1.0, y_axis_label = "Log2 fold-change(rne(WT) 1h/0h)") + ylim(-5,+5) + scale_colour_manual(values=c("DOWN"="black", "UP"="black", "NO"="#d3d3d3ff"))
+p
+ggsave("output/DESeq2_Plots/ddsMat_PSS-rneWT-0h-1h_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+In *rne*(Ts):
+
+```{r}
+count_up_down(PSS_result_dIF_0h_1h, foldchange = 1, padjusted = 0.05)
+  
+p <- MAplot_ggplot(PSS_result_dIF_0h_1h, foldchange=1.0, y_axis_label = "Log2 fold-change(rne(Ts) 1h/0h)") + ylim(-5,+5) + scale_colour_manual(values=c("DOWN"="black", "UP"="black", "NO"="#d3d3d3ff"))
+p
+ggsave("output/DESeq2_Plots/ddsMat_PSS-rneTs-0h-1h_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+### PSS log2FC-log2FC comparisions
+
+Create plot comparing log2FC before and after the heat shock in both *rne*(WT) and *rne*(Ts):
+
+```{r}
+PSS_result_dIF_0h_1h_annot_copy <- PSS_result_dIF_0h_1h_annot
+row.names(PSS_result_dIF_0h_1h_annot_copy) <- PSS_result_dIF_0h_1h_annot_copy$rowname
+positions <- intersect(row.names(PSS_result_dIF_0h_1h), row.names(PSS_result_dWT_0h_1h))
+df_log2FC_log2FC_plot <- data.frame(RNAfeat=PSS_result_dIF_0h_1h_annot_copy[positions,]$CDS, PSS=positions, log2FC_rneTs=PSS_result_dIF_0h_1h[positions,]$log2FoldChange, padj_rneTs=PSS_result_dIF_0h_1h[positions,]$padj, log2FC_rneWT=PSS_result_dWT_0h_1h[positions,]$log2FoldChange, padj_rneWT=PSS_result_dWT_0h_1h[positions,]$padj, log2FC_1h=PSS_result_dWT_dIF_1h$log2FoldChange, padj_1h=PSS_result_dWT_dIF_1h$padj, diff_WT_Ts=(PSS_result_dWT_0h_1h[positions,]$log2FoldChange-PSS_result_dIF_0h_1h[positions,]$log2FoldChange), ratio_PSS_transcript=apply(PSS_norm[positions,],1,mean)/apply(trans_norm[positions,],1,mean), baseMean=PSS_result_dWT_0h_1h[positions,]$baseMean)
+
+write_tsv(df_log2FC_log2FC_plot, "output/DESeq2_resultsTables/combined_PSS_ddHeat-WT-Ts.tsv")
+
+# color only positions which are differentially expressed after 1 hour heat shock:
+df_log2FC_log2FC_plot$diffexpressed <- "NO"
+fc=1.0
+df_log2FC_log2FC_plot$diffexpressed[df_log2FC_log2FC_plot$log2FC_1h<(-fc) & df_log2FC_log2FC_plot$padj_1h<0.05] <- "DOWN"
+df_log2FC_log2FC_plot$diffexpressed[df_log2FC_log2FC_plot$log2FC_1h>(fc) & df_log2FC_log2FC_plot$padj_1h<0.05] <- "UP"
+
+# only label if padj <0.05 
+df_log2FC_log2FC_plot[df_log2FC_log2FC_plot$diffexpressed=="NO","overlap"] <- NA
+```
+
+Run in respective Directory (output/DESeq2_resultsTables/)
+python    changeAnnotation_DESeq2.py combined_PSS_ddHeat-WT-Ts.tsv combined_PSS_ddHeat-WT-Ts_annotated.tsv
+
+```{r}
+xylim=6
+p <- ggplot(df_log2FC_log2FC_plot, aes(y=log2FC_rneTs, x=log2FC_rneWT, col=diffexpressed, label=RNAfeat)) + geom_point(alpha=0.3, show.legend=FALSE) + theme_light() + geom_vline(xintercept=c(-fc,+fc), linetype="dotted", color="#686868") + geom_hline(yintercept=c(-fc,+fc), linetype="dotted", color="#686868") + xlim(-xylim,+xylim) + ylim(-xylim,+xylim) + xlab("Log2FC(1h/0h) rne(WT)") + ylab("Log2FC(1h/0h) rne(Ts)") + theme(legend.position="none") + scale_colour_manual(values=c("NO"="#d3d3d3b2", "DOWN"="#e69f00b2", "UP"="#005a96b2"))
+p <- p + geom_text_repel(fontface="italic")
+p
+
+ggsave("output/DESeq2_Plots/ddHeat_WT-Ts_plot.pdf",plot=p, width=15, height=12, units="cm")
+ggsave("output/DESeq2_Plots/ddHeat_WT-Ts_plot_moreSpace.pdf",plot=p, width=45, height=36, units="cm")
+```
+
+### TSS 0h
+
+```{r, fig.wide = TRUE}
+count_up_down(TSS_result_dWT_dIF_0h, foldchange=1, padjusted=0.05)
+p <- volcanoPlot_ggplot(as.data.frame(TSS_result_dWT_dIF_0h), foldchange=1, padjusted=0.05)
+p
+ggsave("output/DESeq2_Plots/ddsMat_TSS-0h_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+p <- MAplot_ggplot(TSS_result_dWT_dIF_0h, foldchange=1.0, y_axis_label = "Log2 fold-change(rne(WT)/rne(Ts))") + ylim(-7,+6)
+p
+ggsave("output/DESeq2_Plots/ddsMat_TSS-0h_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+### TSS 1h 
+
+```{r, fig.wide = TRUE}
+count_up_down(TSS_result_dWT_dIF_1h, foldchange=1, padjusted=0.05)
+
+p <- volcanoPlot_ggplot(as.data.frame(TSS_result_dWT_dIF_1h), foldchange=1, padjusted=0.05)
+p
+ggsave("output/DESeq2_Plots/ddsMat_TSS-1h_VolcanoPlot.pdf", plot=p, width=15, height=12, units="cm")
+
+p <- MAplot_ggplot(TSS_result_dWT_dIF_1h, foldchange=1.0, y_axis_label = "Log2 fold-change(rne(WT)/rne(Ts))") + ylim(-7,+6)
+p
+ggsave("output/DESeq2_Plots/ddsMat_TSS-1h_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+### TSS heat treatment
+
+```{r}
+count_up_down(TSS_result_dWT_0h_1h, foldchange = 1, padjusted = 0.05)
+count_up_down(TSS_result_dWT_0h_1h, foldchange = 2, padjusted = 0.05)
+  
+p <- MAplot_ggplot(TSS_result_dWT_0h_1h, foldchange=1.0, y_axis_label = "Log2 fold-change(rne(WT) 1h/0h)") + ylim(-7,+6) + scale_colour_manual(values=c("DOWN"="black", "UP"="black", "NO"="#d3d3d3ff"))
+p
+ggsave("output/DESeq2_Plots/ddsMat_TSS-rneWT-0h-1h_MAplot.pdf",plot=p, width=15, height=12, units="cm")
+```
+
+## Test if 5'-P / 5'-PPP ratio changes at TSS positions
+
+```{r}
+TSSPSS_at_TSSpositions <- counts(ddsMat_PSSTSS, normalize=FALSE)[names_prob_TSS,] # normalize= TRUE/FALSE: should not make difference, but decided to use FALSE since should introduce less bias
+
+# calculate ratios
+dIF11_0h_ratio=TSSPSS_at_TSSpositions[,"dIF11_0h_PSS"]/TSSPSS_at_TSSpositions[,"dIF11_0h_TSS"]
+dIF11_1h_ratio=TSSPSS_at_TSSpositions[,"dIF11_1h_PSS"]/TSSPSS_at_TSSpositions[,"dIF11_1h_TSS"]
+dIF12_0h_ratio=TSSPSS_at_TSSpositions[,"dIF12_0h_PSS"]/TSSPSS_at_TSSpositions[,"dIF12_0h_TSS"]
+dIF12_1h_ratio=TSSPSS_at_TSSpositions[,"dIF12_1h_PSS"]/TSSPSS_at_TSSpositions[,"dIF12_1h_TSS"]
+dIF31_0h_ratio=TSSPSS_at_TSSpositions[,"dIF31_0h_PSS"]/TSSPSS_at_TSSpositions[,"dIF31_0h_TSS"]
+dIF31_1h_ratio=TSSPSS_at_TSSpositions[,"dIF31_1h_PSS"]/TSSPSS_at_TSSpositions[,"dIF31_1h_TSS"]
+
+dWT1_0h_ratio=TSSPSS_at_TSSpositions[,"dWT1_0h_PSS"]/TSSPSS_at_TSSpositions[,"dWT1_0h_TSS"]
+dWT1_1h_ratio=TSSPSS_at_TSSpositions[,"dWT1_1h_PSS"]/TSSPSS_at_TSSpositions[,"dWT1_1h_TSS"]
+dWT2_0h_ratio=TSSPSS_at_TSSpositions[,"dWT2_0h_PSS"]/TSSPSS_at_TSSpositions[,"dWT2_0h_TSS"]
+dWT2_1h_ratio=TSSPSS_at_TSSpositions[,"dWT2_1h_PSS"]/TSSPSS_at_TSSpositions[,"dWT2_1h_TSS"]
+dWT3_0h_ratio=TSSPSS_at_TSSpositions[,"dWT3_0h_PSS"]/TSSPSS_at_TSSpositions[,"dWT3_0h_TSS"]
+dWT3_1h_ratio=TSSPSS_at_TSSpositions[,"dWT3_1h_PSS"]/TSSPSS_at_TSSpositions[,"dWT3_1h_TSS"]
+```
+
+```{r}
+# create df for plotting
+df_TSSPSS_ratio <- as.data.frame(cbind(sample=c(rep("dIF1_0h", length(names_prob_TSS)),rep("dIF1_1h", length(names_prob_TSS)),rep("dIF2_0h", length(names_prob_TSS)),rep("dIF2_1h", length(names_prob_TSS)),rep("dIF3_0h", length(names_prob_TSS)),rep("dIF3_1h", length(names_prob_TSS)),rep("dWT1_0h", length(names_prob_TSS)),rep("dWT1_1h", length(names_prob_TSS)),rep("dWT2_0h", length(names_prob_TSS)),rep("dWT2_1h", length(names_prob_TSS)),rep("dWT3_0h", length(names_prob_TSS)),rep("dWT3_1h", length(names_prob_TSS))), type=c(rep("rne(Ts)", 6*length(names_prob_TSS)), rep("rne(WT)", 6*length(names_prob_TSS)))))
+df_TSSPSS_ratio$TSSPSS_ratio <- c(dIF11_0h_ratio, dIF11_1h_ratio, dIF12_0h_ratio, dIF12_1h_ratio, dIF31_0h_ratio, dIF31_1h_ratio, dWT1_0h_ratio, dWT1_1h_ratio, dWT2_0h_ratio, dWT2_1h_ratio, dWT3_0h_ratio, dWT3_1h_ratio)
+```
+
+```{r}
+p <- ggplot(data=df_TSSPSS_ratio, aes(x=sample, y=TSSPSS_ratio, fill=type)) + geom_violin() +
+  geom_boxplot(width=0.1, color="grey", alpha=0.2, outlier.shape=NA, show.legend = FALSE) +
+  scale_fill_viridis(discrete=TRUE, alpha=0.6, option="A") +
+  theme_light() +
+  labs(fill="", y="PSS/TSS at TSS positions", x="")
+p
+```
+
+```{r}
+df_TSSPSS_ratio_2 <- subset(df_TSSPSS_ratio, !is.na(df_TSSPSS_ratio$TSSPSS_ratio) & !is.infinite(df_TSSPSS_ratio$TSSPSS_ratio))
+df_TSSPSS_ratio_2$TSSPSS_ratio <- df_TSSPSS_ratio_2$TSSPSS_ratio + 0.0001
+p <- ggplot(data=df_TSSPSS_ratio_2, aes(x=sample, y=TSSPSS_ratio, fill=type)) + geom_violin() +
+  geom_boxplot(width=0.1, color="grey", alpha=0.2, outlier.shape=NA, show.legend = FALSE) +
+  scale_fill_viridis(discrete=TRUE, alpha=0.6, option="A") +
+  theme_light() +
+  labs(fill="", y="PSS/TSS at TSS positions", x="") + scale_y_continuous(trans="log10", limits=c(NA,10), breaks=c(0,0.01,0.1,1,10))
+p
+```
+
+```{r, echo=FALSE}
+save.image(file = "DESeq2_analyses_PSS-TSS.RData")
+```
+```{r, echo=FALSE}
+#load("DESeq2_analyses_PSS-TSS.RData")
+```
+
+# Exploratory data analysis
+
+## Extract Peak Positions and create GRanges objects
+
+advanced_reduce_withBaseMeans() merges adjacent PSS positions. In a second step, peaks which are wider than 1nt are reduced to a 1nt wide position according to the baseMeans of the peaks - the most highly populated position is given. PSS_Ranges_up are peaks which are higher in *rne*(WT), PSS_Ranges_down peaks which are higher in *rne*(Ts).
+
+### For all positions
+
+```{r}
+PSS_Ranges_up <- advanced_reduce_withBaseMeans(create_GRanges_object_from_resObject(PSS_result_dWT_dIF_1h, foldchange=1, padjusted=0.05))
+PSS_Ranges_down <- advanced_reduce_withBaseMeans(create_GRanges_object_from_resObject(PSS_result_dWT_dIF_1h, foldchange=(-1), padjusted=0.05, up=FALSE))
+PSS_Ranges <- c(PSS_Ranges_up, PSS_Ranges_down)
+```
+
+## Extract data for Weblogo
+
+```{r}
+peaks_all <- extract_RNA_sequences(PSS_Ranges, syne_fasta, 5)
+peaks_up <- extract_RNA_sequences(PSS_Ranges_up, syne_fasta, 5)
+peaks_down <- extract_RNA_sequences(PSS_Ranges_down, syne_fasta, 5)
+
+writeXStringSet(peaks_all, "output/rneWT_rneTs_Weblogo/all_peaks_5upDownstream.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(peaks_up, "output/rneWT_rneTs_Weblogo/peaks_up_5upDownstream.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(peaks_down, "output/rneWT_rneTs_Weblogo/peaks_down_5upDownstream.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+
+sum((apply(oligonucleotideFrequency(syne_fasta, width=1), 2, sum)/sum(apply(oligonucleotideFrequency(syne_fasta, width=1),2,sum)))[2:3]) # get GC-content for weblogo
+```
+
+run createWebLogos.txt for creation of sequence logos
+
+## Extract data for MEME, MEME-ChIP
+
+Use commands in MEME_analyses_RNaseE_peaks.txt to do MEME analyses.
+
+```{r}
+peaks_all <- extract_RNA_sequences(PSS_Ranges, syne_fasta, 25)
+peaks_up <- extract_RNA_sequences(PSS_Ranges_up, syne_fasta, 25)
+peaks_down <- extract_RNA_sequences(PSS_Ranges_down, syne_fasta, 25)
+
+writeXStringSet(peaks_all, "output/rneWT_rneTs_Weblogo/all_peaks_25upDownstream.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(peaks_up, "output/rneWT_rneTs_Weblogo/peaks_up_25upDownstream.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(peaks_down, "output/rneWT_rneTs_Weblogo/peaks_down_25upDownstream.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+```
+
+## Analyse overlap with chromosome/plasmids
+
+Prepare data frames for the plots and count how many PSS are overlapping with which sequence and with how many of the respective features:
+
+```{r}
+# prepare data.frame for barplot
+sequences <- as.character(levels(seqnames(PSS_Ranges_up)))
+updown <- c(rep("rne(WT)",length(sequences)), rep("rne(Ts)",length(sequences)))
+df_PSS_sequence_barplot <- data.frame(cbind(sequence=sequences, updown=updown))
+df_PSS_sequence_barplot$updown <- factor(df_PSS_sequence_barplot$updown, levels=c("rne(WT)", "rne(Ts)"))
+df_PSS_sequence_barplot$x_labels <- NA
+df_PSS_sequence_barplot[df_PSS_sequence_barplot$sequence=="BA000022.2",]$x_labels <- "Chr"
+df_PSS_sequence_barplot[df_PSS_sequence_barplot$sequence=="AP004311.1",]$x_labels <- "pSYSA"
+df_PSS_sequence_barplot[df_PSS_sequence_barplot$sequence=="AP004312.1",]$x_labels <- "pSYSG"
+df_PSS_sequence_barplot[df_PSS_sequence_barplot$sequence=="AP004310.1",]$x_labels <- "pSYSM"
+df_PSS_sequence_barplot[df_PSS_sequence_barplot$sequence=="AP006585.1",]$x_labels <- "pSYSX"
+df_PSS_sequence_barplot$x_labels <- factor(df_PSS_sequence_barplot$x_labels, levels=c("Chr", "pSYSA", "pSYSG", "pSYSM", "pSYSX"))
+df_PSS_sequence_barplot$geno_size <- NA
+for(i in df_PSS_sequence_barplot$sequence){
+  df_PSS_sequence_barplot[df_PSS_sequence_barplot$sequence==i,]$geno_size <- seqlengths(syne_fasta)[i]
+}
+df_PSS_sequence_barplot$geno_relative_size <- df_PSS_sequence_barplot$geno_size/sum(seqlengths(syne_fasta))*100
+df_PSS_sequence_barplot$number_feat_overlap <- NA
+df_PSS_sequence_barplot$number_PSS_overlap <- NA 
+df_PSS_sequence_barplot$number_feat_total <- NA
+df_PSS_sequence_barplot$PSS_kb <- NA
+
+# prepare data frame for number of overlaps with certain features
+df_PSS_sequence_overlap_perKb <- data.frame()
+
+# extract number of overlaps with different sequences and features, both for up- and downregulated PSS positions
+for(s in sequences){
+  index_up <- which(df_PSS_sequence_barplot$sequence==s & df_PSS_sequence_barplot$updown=="rne(WT)")
+  index_down <- which(df_PSS_sequence_barplot$sequence==s & df_PSS_sequence_barplot$updown=="rne(Ts)") 
+  
+  df_PSS_sequence_barplot[index_up,"number_feat_overlap"] <- sum(countOverlaps(subset(features, seqnames(features)==s), PSS_Ranges_up)>0) # count number of features affected
+  df_PSS_sequence_barplot[index_up,"number_PSS_overlap"] <- length(subset(PSS_Ranges_up, seqnames(PSS_Ranges_up)==s))
+  df_PSS_sequence_barplot[index_up,"PSS_kb"] <- length(subset(PSS_Ranges_up, seqnames(PSS_Ranges_up)==s))/(seqlengths(syne_fasta[s])/1000)
+    
+  df_PSS_sequence_barplot[index_down,"number_feat_overlap"] <- sum(countOverlaps(subset(features, seqnames(features)==s), PSS_Ranges_down)>0) # count number of features affected
+  df_PSS_sequence_barplot[index_down,"number_PSS_overlap"] <- length(subset(PSS_Ranges_down, seqnames(PSS_Ranges_down)==s))
+  df_PSS_sequence_barplot[index_down,"PSS_kb"] <- length(subset(PSS_Ranges_down, seqnames(PSS_Ranges_down)==s))/(seqlengths(syne_fasta[s])/1000)
+  
+  df_PSS_sequence_barplot[df_PSS_sequence_barplot$sequence==s,"number_feat_total"] <- length(subset(features, seqnames(features)==s))
+}
+
+df_PSS_sequence_barplot$perc_feat <- (df_PSS_sequence_barplot$number_feat_overlap/df_PSS_sequence_barplot$number_feat_total)*100
+df_PSS_sequence_barplot$perc_all_feat <- NA
+df_PSS_sequence_barplot[df_PSS_sequence_barplot$updown=="rne(WT)",]$perc_all_feat <- df_PSS_sequence_barplot[df_PSS_sequence_barplot$updown=="rne(WT)",]$number_PSS_overlap/sum(df_PSS_sequence_barplot[df_PSS_sequence_barplot$updown=="rne(WT)",]$number_PSS_overlap)*100
+df_PSS_sequence_barplot[df_PSS_sequence_barplot$updown=="rne(Ts)",]$perc_all_feat <- df_PSS_sequence_barplot[df_PSS_sequence_barplot$updown=="rne(Ts)",]$number_PSS_overlap/sum(df_PSS_sequence_barplot[df_PSS_sequence_barplot$updown=="rne(Ts)",]$number_PSS_overlap)*100
+```
+
+```{r}
+df_PSS_sequence_barplot
+write.csv(df_PSS_sequence_barplot, file="output/overlap_contigs_PSS.csv")
+```
+
+```{r}
+# Plot: PSS per kb
+p <- ggplot(data=df_PSS_sequence_barplot, aes(x=x_labels,y=PSS_kb, fill=updown)) + geom_bar(stat="identity", position="dodge") + theme_light()+ xlab("") + ylab("PSS/kb") + scale_fill_manual(name="", values=c("#005a96ff", "#e69f00ff"), breaks=c("rne(WT)", "rne(Ts)"), labels=c("rne(WT)", "rne(Ts)"))
+p
+ggsave(filename = "output/barplots_overlapFeatures/barplot_PSSkb_chr_plasmids.pdf", plot = p, width = 14, height = 7, units = "cm")
+
+# Plot: How many features of a certain kind are overlapped by PSS?
+p <- ggplot(data=df_PSS_sequence_barplot, aes(x=x_labels,y=perc_feat, fill=updown)) + geom_bar(stat="identity", position="dodge") + theme_light()+ xlab("") + ylab("Features overlapped by PSS (%)") + scale_fill_manual(name="", values=c("#005a96ff", "#e69f00ff"), breaks=c("rne(WT)", "rne(Ts)"), labels=c("rne(WT)", "rne(Ts)"))
+p
+ggsave(filename = "output/barplots_overlapFeatures/barplot_percentageFeatures_chr_plasmids.pdf", plot = p, width = 14, height = 7, units = "cm")
+
+# Plots: How many PSS are localized in which kind of feature?
+p <- ggplot(data=df_PSS_sequence_barplot, aes(x=updown,y=number_PSS_overlap, fill=x_labels)) + geom_bar(stat="identity", position="stack") + theme_light()+ xlab("") + ylab("Percentage of all PSS (%)") + scale_fill_brewer(palette="Paired", direction=1)#scale_fill_OkabeIto(name="", order=c(2:8,1))
+p
+ggsave(filename = "output/barplots_overlapFeatures/barplot_absolute_chromo_plasmids_ofAllPSS.pdf", plot = p, width = 7, height = 7, units = "cm")
+
+p <- ggplot(data=df_PSS_sequence_barplot, aes(x=updown,y=number_PSS_overlap, fill=x_labels)) + geom_bar(stat="identity", position="fill") + theme_light()+ xlab("") + ylab("Number PSS") + scale_fill_brewer(palette="Paired", direction=1)#scale_fill_OkabeIto(name="", order=c(2:8,1))
+p
+ggsave(filename = "output/barplots_overlapFeatures/barplot_perc_chromo_plasmids_ofAllPSS.pdf", plot = p, width = 7, height = 7, units = "cm")
+```
+
+For comparison, plot lengths of different parts of genome:
+
+```{r}
+seqlengths_syne <- as.data.frame(seqlengths(syne_fasta))
+seqlengths_syne$name <- NA
+seqlengths_syne["BA000022.2",]$name <- "Chr"
+seqlengths_syne["AP004311.1",]$name <- "pSYSA"
+seqlengths_syne["AP004312.1",]$name <- "pSYSG"
+seqlengths_syne["AP004310.1",]$name <- "pSYSM"
+seqlengths_syne["AP006585.1",]$name <- "pSYSX"
+seqlengths_syne$x <- "a"
+
+p <- ggplot(data=seqlengths_syne, aes(x=x, y=seqlengths(syne_fasta), fill=name)) + geom_bar(stat="identity", position="fill") + theme_light()+ xlab("") + ylab("Percentage of total length") + scale_fill_brewer(palette="Paired", direction=1)#scale_fill_OkabeIto(name="", order=c(2:8,1))
+p
+ggsave(filename = "output/barplots_overlapFeatures/barplot_perc_chromo_plasmids_lengths.pdf", plot = p, width = 6, height = 7, units = "cm")
+```
+
+## Analyse overlap with different RNA features and number of overlaps with those features
+
+Prepare data frames for the plots and count how many PSS are overlapping with which features, how many features of a certain type are overlapped by PSS, how many PSS are located in each feature per kb.
+
+```{r}
+# prepare data.frame for barplot
+types <- rep(c("CDS","5UTR", "3UTR", "tRNA", "rRNA", "ncRNA", "asRNA", "CRISPR", "misc"),3)
+updown <- c(rep("up",9), rep("down",9), rep("both",9))
+df_PSS_features <- data.frame(cbind(type=types, updown=updown))
+df_PSS_features$number_feat_overlap <- NA 
+df_PSS_features$number_PSS_overlap <- NA
+df_PSS_features$number_total <- NA
+
+# prepare data frame for number of overlaps with certain features
+df_PSS_features_overlap_perKb <- data.frame()
+
+# extract number of overlaps with different feature types, both for up- and downregulated PSS positions
+types <- c("CDS","5UTR", "3UTR", "tRNA", "rRNA", "ncRNA", "asRNA", "CRISPR", "misc")
+for(t in types){
+  t_feat <- which(features$type == t)
+  
+  index_up <- which(df_PSS_features$type==t & df_PSS_features$updown=="up")
+  index_down <- which(df_PSS_features$type==t & df_PSS_features$updown=="down") 
+  index_both <- which(df_PSS_features$type==t & df_PSS_features$updown=="both") 
+  
+  df_PSS_features[index_up,"number_feat_overlap"] <- sum(countOverlaps(features[t_feat], PSS_Ranges_up)>0) # count number of features affected
+  df_PSS_features[index_up,"number_PSS_overlap"] <- sum(countOverlaps(PSS_Ranges_up, features[t_feat])>0) # count where PSS are located
+  df_PSS_features[index_down,"number_feat_overlap"] <- sum(countOverlaps(features[t_feat], PSS_Ranges_down)>0) # count number of features affected
+  df_PSS_features[index_down,"number_PSS_overlap"] <- sum(countOverlaps(PSS_Ranges_down, features[t_feat])>0) # count where PSS are located
+  df_PSS_features[index_both,"number_feat_overlap"] <- sum(countOverlaps(features[t_feat], PSS_Ranges_down)>0 | countOverlaps(features[t_feat], PSS_Ranges_up)>0) # count number of features affected
+  df_PSS_features[index_both,"number_PSS_overlap"] <- sum(countOverlaps(PSS_Ranges_down, features[t_feat])>0) + sum(countOverlaps(PSS_Ranges_up, features[t_feat])>0) # count where PSS are located
+  
+  df_PSS_features[df_PSS_features$type==t,"number_total"] <- length(features[t_feat])
+  
+  counts_per_kb <- countOverlaps(features[t_feat], PSS_Ranges_up)/(width(features[t_feat])/1000)
+  df_PSS_features_overlap_perKb <- rbind(df_PSS_features_overlap_perKb, data.frame(type=rep(paste(t, "-up", sep=""),length(features[t_feat])), counts_per_kb=counts_per_kb))
+  counts_per_kb <- countOverlaps(features[t_feat], PSS_Ranges_down)/(width(features[t_feat])/1000)
+  df_PSS_features_overlap_perKb <- rbind(df_PSS_features_overlap_perKb, data.frame(type=rep(paste(t, "-down", sep=""),length(features[t_feat])), counts_per_kb=counts_per_kb))
+}
+```
+
+```{r}
+df_PSS_features
+write.csv(df_PSS_features, file="output/overlap_RNAfeatures_PSS.csv")
+```
+
+for TUs:
+
+```{r}
+sum(countOverlaps(TUs, PSS_Ranges_up)>0)
+sum(countOverlaps(TUs, PSS_Ranges_down)>0)
+sum((countOverlaps(TUs, PSS_Ranges_up)|countOverlaps(TUs, PSS_Ranges_down))>0)
+```
+
+### Create bar plots
+
+Do further processing of data frames.
+
+```{r}
+df_PSS_features_barplot <- subset(df_PSS_features, df_PSS_features$updown=="up" | df_PSS_features$updown=="down")
+
+total_overlaps_up <- sum(countOverlaps(PSS_Ranges_up, features)>0)
+total_overlaps_down <- sum(countOverlaps(PSS_Ranges_down, features)>0)
+
+df_PSS_features_barplot[,"number_feat_overlap"] <- as.integer(df_PSS_features_barplot[,"number_feat_overlap"])/as.integer(df_PSS_features_barplot[,"number_total"])*100
+
+# create column  with absolute numbers
+df_PSS_features_barplot$number_PSS_overlap_absolute <- NA
+df_PSS_features_barplot[df_PSS_features_barplot$updown=="up",]$number_PSS_overlap_absolute <- as.integer(df_PSS_features_barplot[df_PSS_features_barplot$updown=="up","number_PSS_overlap"])
+df_PSS_features_barplot[df_PSS_features_barplot$updown=="down",]$number_PSS_overlap_absolute <- as.integer(df_PSS_features_barplot[df_PSS_features_barplot$updown=="down","number_PSS_overlap"])
+
+# calculate percentages
+df_PSS_features_barplot[df_PSS_features_barplot$updown=="up","number_PSS_overlap"] <- as.integer(df_PSS_features_barplot[df_PSS_features_barplot$updown=="up","number_PSS_overlap"])/total_overlaps_up *100
+df_PSS_features_barplot[df_PSS_features_barplot$updown=="down","number_PSS_overlap"] <- as.integer(df_PSS_features_barplot[df_PSS_features_barplot$updown=="down","number_PSS_overlap"])/total_overlaps_down *100
+
+# rename types (5'UTR instead of 5UTR, 3'UTR instead of 3UTR)
+df_PSS_features_barplot[,"type"] <- rep(c("CDS","5'UTR", "3'UTR", "tRNA", "rRNA", "ncRNA", "asRNA", "CRISPR", "misc"),2)
+
+# reduce plot to information I actually care about
+df_PSS_features_barplot <- df_PSS_features_barplot[which(!df_PSS_features_barplot$type=="rRNA"),] # rRNAs cannot be counted here, because multireads were excluded from analysis
+df_PSS_features_barplot <- df_PSS_features_barplot[which(!df_PSS_features_barplot$type=="misc"),] # misc are actually only genes which are split by plasmid / chromosome beginning and two features (NC-2306445, NC-3547510) where I never figured out what they are. One PSS overlaps with sll8049-1. So I think one can savely ignore those
+```
+
+Do actual plotting.
+
+```{r}
+# cast type, updown as factors to influence order in which they show up in the plots
+df_PSS_features_barplot$type <- factor(df_PSS_features_barplot$type, levels=c("tRNA", "asRNA", "ncRNA", "CRISPR", "3'UTR", "5'UTR", "CDS"))
+df_PSS_features_barplot$updown <- c(rep("rne(WT)", 7), rep("rne(Ts)",7))
+df_PSS_features_barplot$updown <- factor(df_PSS_features_barplot$updown, levels=c("rne(WT)", "rne(Ts)"))
+
+# Plot: How many features of a certain kind are overlapped by PSS?
+p <- ggplot(data=df_PSS_features_barplot, aes(x=type,y=number_feat_overlap, fill=updown)) + geom_bar(stat="identity", position="dodge") + theme_light()+ xlab("") + ylab("Percentage PSS (%)") + scale_fill_manual(name="", values=c("#005a96ff", "#e69f00ff"), breaks=c("rne(WT)", "rne(Ts)"), labels=c("rne(WT)", "rne(Ts)"))
+p
+ggsave(filename = "output/barplots_overlapFeatures/barplot_percentage_of_allThisFeature.pdf", plot = p, width = 14, height = 7, units = "cm")
+
+# Plots: How many PSS are localized in which kind of feature?
+p <- ggplot(data=df_PSS_features_barplot, aes(x=updown,y=number_PSS_overlap, fill=type)) + geom_bar(stat="identity", position="stack") + theme_light()+ xlab("") + ylab("Percentage of all PSS (%)") + scale_fill_brewer(palette="Paired", direction=1)#scale_fill_OkabeIto(name="", order=c(2:8,1))
+p
+ggsave(filename = "output/barplots_overlapFeatures/barplot_percentage_ofAllPSS.pdf", plot = p, width = 7, height = 7, units = "cm")
+
+p <- ggplot(data=df_PSS_features_barplot, aes(x=updown,y=number_PSS_overlap_absolute, fill=type)) + geom_bar(stat="identity", position="stack") + theme_light()+ xlab("") + ylab("Number PSS") + scale_fill_brewer(palette="Paired", direction=1)#scale_fill_OkabeIto(name="", order=c(2:8,1))
+p
+ggsave(filename = "output/barplots_overlapFeatures/barplot_absolute_ofAllPSS.pdf", plot = p, width = 7, height = 7, units = "cm")
+```
+
+### Plots of number PSS per feature
+
+Exclude rRNA, tRNA, misc from plots since not much information in those.
+
+```{r}
+df_PSS_features_overlap_perKb <- df_PSS_features_overlap_perKb[which(!df_PSS_features_overlap_perKb$type=="rRNA-up"),]
+df_PSS_features_overlap_perKb <- df_PSS_features_overlap_perKb[which(!df_PSS_features_overlap_perKb$type=="rRNA-down"),]
+df_PSS_features_overlap_perKb <- df_PSS_features_overlap_perKb[which(!df_PSS_features_overlap_perKb$type=="tRNA-up"),]
+df_PSS_features_overlap_perKb <- df_PSS_features_overlap_perKb[which(!df_PSS_features_overlap_perKb$type=="tRNA-down"),]
+df_PSS_features_overlap_perKb <- df_PSS_features_overlap_perKb[which(!df_PSS_features_overlap_perKb$type=="misc-up"),]
+df_PSS_features_overlap_perKb <- df_PSS_features_overlap_perKb[which(!df_PSS_features_overlap_perKb$type=="misc-down"),]
+```
+
+Violin plot for a first overview.
+
+```{r}
+p <- ggplot(data=df_PSS_features_overlap_perKb, aes(x=type, y=counts_per_kb, fill=type)) + geom_violin() +
+  geom_boxplot(width=0.1, color="grey", alpha=0.2, outlier.shape=NA, show.legend = FALSE) +
+  scale_fill_viridis(discrete=TRUE, alpha=0.6, option="A") +
+  theme_light() +
+  labs(fill="", y="Number of PSS per feature per kb", x="")
+p
+```
+
+Plot with log-transformation + statistics for all features (add pseudocount of 0.0001 to avoid 0-problem of log-transformation).
+
+```{r}
+df_PSS_features_overlap_perKb$type <- as.factor(df_PSS_features_overlap_perKb$type)
+magma_colors <- magma(length(levels(df_PSS_features_overlap_perKb$type))/2, alpha = 0.6, begin = 0, end = 1, direction = 1)[c(1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9)]
+
+p <- ggplot(data=df_PSS_features_overlap_perKb, aes(x=type, y=counts_per_kb +0.0001, fill=type)) + 
+  geom_boxplot(outlier.shape=NA) + geom_jitter(color="black", size=0.05, alpha=0.9, show.legend=FALSE)+ 
+  scale_fill_manual(values=magma_colors)+
+  theme_light()+ theme(legend.position = "none") +
+  labs(fill="", y="Number of PSS per kb", x="") + scale_y_continuous(trans="log10", limits=c(NA,100), breaks=c(0,2,4,8,16,32,64)) + scale_x_discrete(breaks=c("3UTR-down", "3UTR-up", "5UTR-down", "5UTR-up", "asRNA-down", "asRNA-up", "CDS-down", "CDS-up", "CRISPR-down", "CRISPR-up", "ncRNA-down","ncRNA-up"), labels=c("Ts\n3'UTR", "WT\n3'UTR", "Ts\n5'UTR", "WT\n5'UTR", "Ts\nasRNA", "WT\nasRNA", "Ts\nCDS", "WT\nCDS", "Ts\nCRISPR", "WT\nCRISPR", "Ts\nncRNA", "WT\nncRNA"))
+#        labels=rep(c("Ts", "WT"), 6))
+p 
+```
+
+Plot with log-transformation, without pseudocounts: Boxplots show statistics for features which are cleaved at all, not for all features irrespective if cleaved or not.
+
+```{r}
+df_PSS_features_overlap_perKb$type <- as.factor(df_PSS_features_overlap_perKb$type)
+magma_colors <- magma(length(levels(df_PSS_features_overlap_perKb$type))/2, alpha = 0.6, begin = 0, end = 1, direction = 1)[c(1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9)]
+
+p <- ggplot(data=df_PSS_features_overlap_perKb, aes(x=type, y=counts_per_kb, fill=type)) + 
+  geom_boxplot(outlier.shape=NA) + geom_jitter(color="black", size=0.05, alpha=0.9, show.legend=FALSE)+ 
+  scale_fill_manual(values=magma_colors)+
+  theme_light()+ theme(legend.position = "none") +
+  labs(fill="", y="Number of PSS per kb", x="") + scale_y_continuous(trans="log10") + scale_x_discrete(breaks=c("3UTR-down", "3UTR-up", "5UTR-down", "5UTR-up", "asRNA-down", "asRNA-up", "CDS-down", "CDS-up", "CRISPR-down", "CRISPR-up", "ncRNA-down","ncRNA-up"), labels=c("Ts\n3'UTR", "WT\n3'UTR", "Ts\n5'UTR", "WT\n5'UTR", "Ts\nasRNA", "WT\nasRNA", "Ts\nCDS", "WT\nCDS", "Ts\nCRISPR", "WT\nCRISPR", "Ts\nncRNA", "WT\nncRNA"))
+#        labels=rep(c("Ts", "WT"), 6))
+p 
+
+ggsave("output/barplots_overlapFeatures/violin_NumberPSS_perKb.pdf", plot=p, width = 14, height = 7, units="cm")
+```
+
+### Further analysis of statistics of number of PSS overlapping certain feature
+
+Statistics for different feature types: 
+
+```{r}
+summary(df_PSS_features_overlap_perKb[which(grepl("CRISPR-up", df_PSS_features_overlap_perKb$type, fixed=TRUE)),]$counts_per_kb)
+summary(df_PSS_features_overlap_perKb[which(grepl("CRISPR-down", df_PSS_features_overlap_perKb$type, fixed=TRUE)),]$counts_per_kb)
+summary(df_PSS_features_overlap_perKb[which(grepl("CDS-up", df_PSS_features_overlap_perKb$type, fixed=TRUE)),]$counts_per_kb)
+summary(df_PSS_features_overlap_perKb[which(grepl("CDS-down", df_PSS_features_overlap_perKb$type, fixed=TRUE)),]$counts_per_kb)
+summary(df_PSS_features_overlap_perKb[which(grepl("asRNA-up", df_PSS_features_overlap_perKb$type, fixed=TRUE)),]$counts_per_kb)
+summary(df_PSS_features_overlap_perKb[which(grepl("asRNA-down", df_PSS_features_overlap_perKb$type, fixed=TRUE)),]$counts_per_kb)
+summary(df_PSS_features_overlap_perKb[which(grepl("ncRNA-up", df_PSS_features_overlap_perKb$type, fixed=TRUE)),]$counts_per_kb)
+summary(df_PSS_features_overlap_perKb[which(grepl("ncRNA-down", df_PSS_features_overlap_perKb$type, fixed=TRUE)),]$counts_per_kb)
+summary(df_PSS_features_overlap_perKb[which(grepl("5UTR-up", df_PSS_features_overlap_perKb$type, fixed=TRUE)),]$counts_per_kb)
+summary(df_PSS_features_overlap_perKb[which(grepl("5UTR-down", df_PSS_features_overlap_perKb$type, fixed=TRUE)),]$counts_per_kb)
+summary(df_PSS_features_overlap_perKb[which(grepl("3UTR-up", df_PSS_features_overlap_perKb$type, fixed=TRUE)),]$counts_per_kb)
+summary(df_PSS_features_overlap_perKb[which(grepl("3UTR-down", df_PSS_features_overlap_perKb$type, fixed=TRUE)),]$counts_per_kb)
+summary(df_PSS_features_overlap_perKb[which(grepl("up", df_PSS_features_overlap_perKb$type, fixed=TRUE)),]$counts_per_kb)
+summary(df_PSS_features_overlap_perKb[which(grepl("down", df_PSS_features_overlap_perKb$type, fixed=TRUE)),]$counts_per_kb)
+```
+
+## GO and KEGG enrichment in set of detected PSS
+
+Control if, in general, PSS are rather detected in certain set of genes. GO annotation only exists for CDS, not for other features: Therefore, only use CDS for functional enrichment. 
+
+Detectable PSS are enriched in genes associated with photosynthesis or ribosomes. I assume both sets are, compared to other sets of genes, highly transcribed and that's the reason why PSS can be detected in those genes. Probably, there are also stable processed RNA fragments created from other sets of transcripts, but they might be too lowly transcribed to be captured by tagRNA-Seq.
+
+```{r}
+CDS_features <- features[which(features$type=="CDS")]
+```
+
+```{r}
+locus_tags_all_PSS <- CDS_features[which(countOverlaps(CDS_features, PSS_advReduce_Ranges)>0)]$locus_tag
+# compared to all CDS
+kegg_PSS_all_enrich <- kegg_functional_enrichment_locusList(locus_tags_all_PSS, CDS_features$locus_tag, write=TRUE, path="output/enrichment/KEGG_allPSS.csv")
+go_PSS_all_enrich <- go_functional_enrichment_locusList(locus_tags_all_PSS, CDS_features$locus_tag, write=TRUE, path="output/enrichment/GO_allPSS.csv")
+```
+
+```{r}
+p <- dotplot(kegg_PSS_all_enrich)
+p
+ggsave("output/enrichment/KEGG_dotplot_allPSS.pdf", plot=p, width=20, height=14, units="cm")
+p <- dotplot(go_PSS_all_enrich, showCategory=20)
+p
+ggsave("output/enrichment/GO_dotplot_allPSS.pdf", plot=p, width=20, height=14, units="cm")
+```
+
+Compared to the positions where PSS were generally detected, no terms are enriched in set of PSS upregulated (higher in *rne*(WT)).
+
+```{r}
+# enrichment in rne(WT) PSS
+locus_tags_up <- CDS_features[which(countOverlaps(CDS_features, PSS_Ranges_up)>0)]$locus_tag
+# compared to all CDS
+kegg_PSS_up_enrich <- kegg_functional_enrichment_locusList(locus_tags_up, CDS_features$locus_tag, write=TRUE, path="output/enrichment/KEGG_PSSup_universeAllCDS.csv")
+go_PSS_up_enrich <- go_functional_enrichment_locusList(locus_tags_up, CDS_features$locus_tag, write=TRUE, path="output/enrichment/GO_PSSup_universeAllCDS.csv")
+# compared to universe: Where are PSS generally localized / what was detectable
+kegg_PSS_up_enrich_2 <- kegg_functional_enrichment_locusList(list_of_genes=locus_tags_up, universe_tags=locus_tags_all_PSS, write=TRUE, path="output/enrichment/KEGG_PSSup_universeDetectedCDS.csv")
+go_PSS_up_enrich_2 <- go_functional_enrichment_locusList(locus_tags_up, universe_tags=locus_tags_all_PSS, write=TRUE, path="output/enrichment/GO_PSSup_universeDetectedCDS.csv")
+```
+
+When using all positions of PSS as universe, syn00195 (Photosynthesis) and syn00196 (Photosynthesis - antenna proteins) are enriched in the PSS ranges down data set. The enriched GO terms match those terms, except that "nucleic adic binding" is added.
+
+```{r}
+# enrichment in rne(WT) PSS
+locus_tags_down <- CDS_features[which(countOverlaps(CDS_features, PSS_Ranges_down)>0)]$locus_tag
+# compared to all CDS
+kegg_PSS_down_enrich <- kegg_functional_enrichment_locusList(locus_tags_down, CDS_features$locus_tag, write=TRUE, path="output/enrichment/KEGG_PSSdown_universeAllCDS.csv")
+go_PSS_down_enrich <- go_functional_enrichment_locusList(locus_tags_down, CDS_features$locus_tag, write=TRUE, path="output/enrichment/GO_PSSdown_universeAllCDS.csv")
+# compared to universe: Where are PSS generally localized / what was detectable
+kegg_PSS_down_enrich_2 <- kegg_functional_enrichment_locusList(locus_tags_down, locus_tags_all_PSS, write=TRUE, path="output/enrichment/KEGG_PSSdown_universeDetectedCDS.csv")
+go_PSS_down_enrich_2 <- go_functional_enrichment_locusList(locus_tags_down, locus_tags_all_PSS, write=TRUE, path="output/enrichment/GO_PSSdown_universeDetectedCDS.csv")
+```
+
+```{r}
+p <- dotplot(kegg_PSS_down_enrich_2)
+p 
+ggsave("output/enrichment/KEGG_dotplot_PSS_down.pdf", plot=p, width=20, height=14, units="cm")
+p <- dotplot(go_PSS_down_enrich_2)
+p
+ggsave("output/enrichment/GO_dotplot_PSSdown.pdf", plot=p, width=20, height=14, units="cm")
+```
+
+## Distance of PSS to Start / Stop position
+
+```{r}
+count_overlaps_xNt_upDownstream <- function(Ranges_object, Ranges_object_2, sequence_object, start_stop="start", len=25){
+  # function returns df with total number overlapping between Ranges_object and Ranges_object_2, iterating from start or stop codon (choose by setting start_stop to "start" or "stop") of Ranges_object +/- nucleotide positions. 
+  
+  # prepare df to return
+  df_overlaps <- data.frame(rbind(rep("NA", length((-len):(+len)))))
+  names(df_overlaps) <- (-len):(+len)
+    
+  # extract lengths of sequences (needed for catching cases in which start_end -len or +len exceeds chromosome/plasmid length) -> if this is the case: since circular DNA: start from other end with counting again (see below)
+  lengths <- c()
+  for(i in 1:length(sequence_object)){
+    lengths[i] <- width(sequence_object[i])
+  }
+  names(lengths) <- names(sequence_object)
+  
+  # extract info about what to extract (depending on strength: upstream corresponds to either + or -)
+  strands <- data.frame(Ranges_object)[,5]
+  plus_strand <- which(strand(Ranges_object)=="+")
+  minus_strand <- which(strand(Ranges_object)=="-")
+  seqs <- as.character(data.frame(Ranges_object)[,1])
+  
+  for(d in (-len):(+len)){
+    positions <- c()
+  
+    # get positions of start_end on plus and minus strand
+    if(start_stop=="start"){
+      positions[plus_strand] <- start(Ranges_object[plus_strand])-(-d) # e.g. - (- -25) -> corresponds to -25
+      positions[minus_strand] <- end(Ranges_object[minus_strand])+(-d) # e.g. + (- -25) -> corresponds to +25
+    }else{
+      positions[plus_strand] <- end(Ranges_object[plus_strand])-(-d) # e.g. - (- -25) -> corresponds to -25
+      positions[minus_strand] <- start(Ranges_object[minus_strand])+(-d) # e.g. + (- -25) -> corresponds to +25
+    }
+    # positions < 0
+    indices <- which(positions < 0)
+    positions[indices] <- lengths[seqs[indices]]-(-positions[indices])
+    
+    # positions at which positions > length of respective plasmid / chromosome
+    indices <- which(positions>lengths[seqs])
+    positions[indices] <- positions[indices]-lengths[seqs[indices]]
+    
+    # create GRanges object
+    temp_GRanges <- GRanges(seqnames=seqs, ranges=IRanges(start = positions, end=positions), strand = strands)
+    
+    # count overlaps    
+    overlap_vect <- countOverlaps(temp_GRanges, Ranges_object_2)
+    df_overlaps[,as.character(d)] <- sum(overlap_vect)
+  }
+  
+  return(df_overlaps)
+}
+```
+
+### For PSS which are upregulated in rne(WT)
+
+```{r}
+overlaps_PSS_up_start_CDS <- count_overlaps_xNt_upDownstream(features[which(features$type=="CDS")], PSS_Ranges_up, syne_fasta, len = 300, start_stop = "start")
+overlaps_PSS_up_stop_CDS <- count_overlaps_xNt_upDownstream(features[which(features$type=="CDS")], PSS_Ranges_up, syne_fasta, len = 300, start_stop = "stop")
+
+overlaps_PSS_up_start_CDS_ggplot <- data.frame(t(overlaps_PSS_up_start_CDS))
+overlaps_PSS_up_start_CDS_ggplot$nt_pos <- as.numeric(row.names(overlaps_PSS_up_start_CDS_ggplot))
+names(overlaps_PSS_up_start_CDS_ggplot)[1] <- "count"
+
+overlaps_PSS_up_stop_CDS_ggplot <- data.frame(t(overlaps_PSS_up_stop_CDS))
+overlaps_PSS_up_stop_CDS_ggplot$nt_pos <- as.numeric(row.names(overlaps_PSS_up_stop_CDS_ggplot))
+names(overlaps_PSS_up_stop_CDS_ggplot)[1] <- "count"
+```
+
+```{r}
+p <- ggplot(overlaps_PSS_up_start_CDS_ggplot, aes(x=nt_pos, y=count)) + geom_line(size=0.5, color="#005a96ff") + theme_light() + labs(x="Distance relative to start codon (nt)", y="Number of cleavage sites") + ylim(0,8)+ geom_vline(aes(xintercept=0), linetype=2, color="darkgray")
+p
+ggsave("output/distance_startStop/PSS_Up_count_relativeStartCodon.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+
+```{r}
+p <- ggplot(overlaps_PSS_up_stop_CDS_ggplot, aes(x=nt_pos, y=count)) + geom_line(size=0.5, color="#005a96ff") + theme_light() + labs(x="Distance relative to stop codon (nt)", y="Number of cleavage sites") + ylim(0,8) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray")
+p
+ggsave("output/distance_startStop/PSS_Up_count_relativeStopCodon.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+```{r}
+overlaps_PSS_up_start_CDS[which(overlaps_PSS_up_start_CDS==max(overlaps_PSS_up_start_CDS))]
+```
+
+```{r}
+overlaps_PSS_up_stop_CDS[which(overlaps_PSS_up_stop_CDS==max(overlaps_PSS_up_stop_CDS))]
+```
+
+#### Identify positions at which PSS are localised exactly upstream of start codons
+
+```{r}
+# extract lengths of sequences (needed for catching cases in which start_end -len or +len exceeds chromosome/plasmid length) -> if this is the case: since circular DNA: start from other end with counting again (see below)
+lengths_syne <- c()
+for(i in 1:length(syne_fasta)){
+  lengths_syne[i] <- width(syne_fasta[i])
+}
+names(lengths_syne) <- names(syne_fasta)
+  
+# extract info about what to extract (depending on strength: upstream corresponds to either + or -)
+strands <- data.frame(CDS_features)[,5]
+plus_strand <- which(strand(CDS_features)=="+")
+minus_strand <- which(strand(CDS_features)=="-")
+seqs <- as.character(data.frame(CDS_features)[,1])
+
+positions <- c()
+  
+## for start codons
+# get positions of start_end on plus and minus strand
+positions[plus_strand] <- start(CDS_features[plus_strand])-1
+positions[minus_strand] <- end(CDS_features[minus_strand])+1
+    
+# positions < 0
+indices <- which(positions < 0)
+positions[indices] <- lengths_syne[seqs[indices]]-(-positions[indices])
+    
+# positions at which positions > length of respective plasmid / chromosome
+indices <- which(positions>lengths_syne[seqs])
+positions[indices] <- positions[indices]-lengths_syne[seqs[indices]]
+    
+# create GRanges object
+temp_GRanges <- GRanges(seqnames=seqs, ranges=IRanges(start = positions, end=positions), strand = strands)
+    
+print(temp_GRanges[which(countOverlaps(temp_GRanges, PSS_Ranges_up)>0)])
+
+
+## for stop codons
+# get positions of start_end on plus and minus strand
+positions[plus_strand] <- end(CDS_features[plus_strand])+2
+positions[minus_strand] <- start(CDS_features[minus_strand])-2
+    
+# positions < 0
+indices <- which(positions < 0)
+positions[indices] <- lengths_syne[seqs[indices]]-(-positions[indices])
+    
+# positions at which positions > length of respective plasmid / chromosome
+indices <- which(positions>lengths_syne[seqs])
+positions[indices] <- positions[indices]-lengths_syne[seqs[indices]]
+    
+# create GRanges object
+temp_GRanges <- GRanges(seqnames=seqs, ranges=IRanges(start = positions, end=positions), strand = strands)
+    
+print(temp_GRanges[which(countOverlaps(temp_GRanges, PSS_Ranges_up)>0)])
+
+# remove all variables which have same name within count_overlaps_xNt_upDownstream()
+rm(positions)
+rm(plus_strand)
+rm(minus_strand)
+rm(indices)
+rm(strands)
+rm(seqs)
+rm(temp_GRanges)
+```
+
+### For PSS which are upregulated in *rne*(Ts)
+
+```{r}
+overlaps_PSS_down_start_CDS <- count_overlaps_xNt_upDownstream(features[which(features$type=="CDS")], PSS_Ranges_down, syne_fasta, len = 300, start_stop = "start")
+overlaps_PSS_down_stop_CDS <- count_overlaps_xNt_upDownstream(features[which(features$type=="CDS")], PSS_Ranges_down, syne_fasta, len = 300, start_stop = "stop")
+
+overlaps_PSS_down_start_CDS_ggplot <- data.frame(t(overlaps_PSS_down_start_CDS))
+overlaps_PSS_down_start_CDS_ggplot$nt_pos <- as.numeric(row.names(overlaps_PSS_down_start_CDS_ggplot))
+names(overlaps_PSS_down_start_CDS_ggplot)[1] <- "count"
+
+overlaps_PSS_down_stop_CDS_ggplot <- data.frame(t(overlaps_PSS_down_stop_CDS))
+overlaps_PSS_down_stop_CDS_ggplot$nt_pos <- as.numeric(row.names(overlaps_PSS_down_stop_CDS_ggplot))
+names(overlaps_PSS_down_stop_CDS_ggplot)[1] <- "count"
+```
+
+```{r}
+p <- ggplot(overlaps_PSS_down_start_CDS_ggplot, aes(x=nt_pos, y=count)) + geom_line(size=0.5, color="#e69f00ff") + theme_light() + labs(x="Distance relative to start codon (nt)", y="Number of cleavage sites") + ylim(0,8)+ geom_vline(aes(xintercept=0), linetype=2, color="darkgray")
+p
+ggsave("output/distance_startStop/PSS_Down_count_relativeStartCodon.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+```{r}
+p <- ggplot(overlaps_PSS_down_stop_CDS_ggplot, aes(x=nt_pos, y=count)) + geom_line(size=0.5, color="#e69f00ff") + theme_light() + labs(x="Distance relative to stop codon (nt)", y="Number of cleavage sites") + ylim(0,8)+ geom_vline(aes(xintercept=0), linetype=2, color="darkgray")
+p
+ggsave("output/distance_startStop/PSS_Down_count_relativeStopCodon.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+```{r}
+overlaps_PSS_down_start_CDS[which(overlaps_PSS_down_start_CDS==max(overlaps_PSS_down_start_CDS))]
+```
+
+```{r}
+overlaps_PSS_down_stop_CDS[which(overlaps_PSS_down_stop_CDS==max(overlaps_PSS_down_stop_CDS))]
+```
+
+#### For all PSS
+
+```{r}
+overlaps_PSS_all_start_CDS <- count_overlaps_xNt_upDownstream(features[which(features$type=="CDS")], PSS_Ranges, syne_fasta, len = 300, start_stop="start")
+overlaps_PSS_all_stop_CDS <- count_overlaps_xNt_upDownstream(features[which(features$type=="CDS")], PSS_Ranges, syne_fasta, len = 300, start_stop="stop")
+
+overlaps_PSS_all_start_CDS_ggplot <- data.frame(t(overlaps_PSS_all_start_CDS))
+overlaps_PSS_all_start_CDS_ggplot$nt_pos <- as.numeric(row.names(overlaps_PSS_all_start_CDS_ggplot))
+names(overlaps_PSS_all_start_CDS_ggplot)[1] <- "count"
+
+overlaps_PSS_all_stop_CDS_ggplot <- data.frame(t(overlaps_PSS_all_stop_CDS))
+overlaps_PSS_all_stop_CDS_ggplot$nt_pos <- as.numeric(row.names(overlaps_PSS_all_stop_CDS_ggplot))
+names(overlaps_PSS_all_stop_CDS_ggplot)[1] <- "count"
+```
+
+```{r}
+p <- ggplot(overlaps_PSS_all_start_CDS_ggplot, aes(x=nt_pos, y=count)) + geom_line(size=0.5) + theme_light() + labs(x="Distance relative to start codon (nt)", y="Number of cleavage sites") + ylim(0,11)+ geom_vline(aes(xintercept=0), linetype=2, color="darkgray")
+p
+ggsave("output/distance_startStop/PSS_all_count_relativeStartCodon.pdf", plot=p, width=10, height=7, units="cm")
+
+p <- ggplot(overlaps_PSS_all_stop_CDS_ggplot, aes(x=nt_pos, y=count)) + geom_line(size=0.5) + theme_light() + labs(x="Distance relative to stop codon (nt)", y="Number of cleavage sites") + ylim(0,11)+ geom_vline(aes(xintercept=0), linetype=2, color="darkgray")
+p
+ggsave("output/distance_startStop/PSS_all_count_relativeStopCodon.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+## Perform RNA Fold with sliding window approach
+
+To investigate secondary structures around processing sites: Extract 150nt upstream / downstream of processing sites and calculate minimum free energy ($\Delta$G). Do this also for random peaks, start and end positions of TUs, start and end positions of CDS. Use sliding window approach to reduce problem of transcript boundaries.
+
+### Processing Sites
+
+```{r}
+# export sequences from peaks + / - 150nt
+peaks_all_150 <- extract_RNA_sequences(PSS_Ranges, syne_fasta, 150)
+peaks_up_150 <- extract_RNA_sequences(PSS_Ranges_up, syne_fasta, 150)
+peaks_down_150 <- extract_RNA_sequences(PSS_Ranges_down, syne_fasta, 150)
+
+writeXStringSet(peaks_all_150, "output/RNAfold/all_peaks_150.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(peaks_up_150, "output/RNAfold/peaks_up_150.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(peaks_down_150, "output/RNAfold/peaks_down_150.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+```
+
+run from command line (!takes a long time!): 
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/peaks_up_150.fasta RNAfold/mfe_files/mfe_peaks_up_150.tsv 50
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/peaks_down_150.fasta RNAfold/mfe_files/mfe_peaks_down_150.tsv 50
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/all_peaks_150.fasta RNAfold/mfe_files/mfe_all_peaks_150_150.tsv 50
+
+```{r}
+mfe_PSS_up <- read.delim("output/RNAfold/mfe_files/mfe_peaks_up_150.tsv", header=TRUE, row.names=1)
+mfe_PSS_up_control <- read.delim("output/RNAfold/mfe_files/mfe_peaks_up_150_control.tsv", header=TRUE, row.names=1)
+mfe_PSS_down <- read.delim("output/RNAfold/mfe_files/mfe_peaks_down_150.tsv", header=TRUE, row.names=1)
+mfe_PSS_down_control <- read.delim("output/RNAfold/mfe_files/mfe_peaks_down_150_control.tsv", header=TRUE, row.names=1)
+```
+
+Original sequences represented nucleotide positions before (-150:-1) and after (+1:+150) cleavage position. With the floating window approach etc., this translates to position "150.5" (index 126).
+
+```{r}
+df_mfe_PSS_quartiles <- data.frame(cbind(ntpos=c(rep(c(-125:125),2)), mfe_distrib=c(apply(mfe_PSS_up, 1, median), apply(mfe_PSS_down, 1, median),apply(mfe_PSS_up, 1, quantile,probs=0.25), apply(mfe_PSS_down, 1, quantile,probs=0.25),apply(mfe_PSS_up, 1,  quantile,probs=0.75), apply(mfe_PSS_down, 1,  quantile,probs=0.75))))
+df_mfe_PSS_quartiles$updown <- rep(c(rep("up",251), rep("down", 251)),3)
+df_mfe_PSS_quartiles$median_quartile <- c(rep("median", 502), rep("1quartile", 502), rep("3quartile",502))
+
+mean_or_median = mean
+df_mfe_PSS <- data.frame(cbind(ntpos=c(rep(c(-125:125),4)), mfe=c(apply(mfe_PSS_up, 1, mean_or_median), apply(mfe_PSS_down, 1, mean_or_median), apply(mfe_PSS_up_control, 1, mean_or_median), apply(mfe_PSS_down_control,1, mean_or_median))))
+df_mfe_PSS$updown <- rep(c(rep("up",251), rep("down", 251)),2)
+df_mfe_PSS$control <- c(rep("data", 502), rep("control", 502))
+```
+
+Plot with shuffled data and non-shuffled data
+
+```{r}
+p <- ggplot(data=df_mfe_PSS, aes(x=ntpos, y=mfe, color=updown)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(aes(linetype=control), size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks", breaks=c("up", "down"), labels=c("rne(WT)>Ts", "rne(Ts)>WT")) + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-10,-4.75)
+p
+ggsave("output/RNAfold/figures/deltaG_PSS_shuffled.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+Plot with quartiles (1st, median, 3rd)
+
+```{r}
+p <- ggplot(data=df_mfe_PSS_quartiles, aes(x=ntpos, y=mfe_distrib, color=updown, linetype=median_quartile)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + 
+  scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks", breaks=c("up", "down"), labels=c("rne(WT)>Ts", "rne(Ts)>WT")) + 
+  scale_linetype_manual(name="Quartiles",values=c(3,1,3), breaks=c("1quartile", "median", "3quartile"), labels=c("1st", "2nd", "3rd")) +
+  xlab("Distance Relative to Cleavage Site (nt)") + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-14,-2)
+p
+
+ggsave("output/RNAfold/figures/deltaG_PSS_quartiles.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+```{r}
+p <- ggplot(data=subset(df_mfe_PSS, df_mfe_PSS$control=="data"), aes(x=ntpos, y=mfe, color=updown)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks", breaks=c("up", "down"), labels=c("rne(WT)>Ts", "rne(Ts)>WT")) + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-10,-4.75)
+p
+
+ggsave("output/RNAfold/figures/deltaG_PSS.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+run from command line (!takes a long time!): 
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/peaks_up_150.fasta RNAfold/mfe_files/mfe_peaks_up_150_25nt.tsv 25
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/peaks_down_150.fasta RNAfold/mfe_files/mfe_peaks_down_150_25nt.tsv 25
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/all_peaks_150.fasta RNAfold/mfe_files/mfe_all_peaks_150_25nt.tsv 25
+
+```{r}
+mfe_PSS_25nt_up <- read.delim("output/RNAfold/mfe_files/mfe_peaks_up_150_25nt.tsv", header=TRUE, row.names=1)
+mfe_PSS_25nt_down <- read.delim("output/RNAfold/mfe_files/mfe_peaks_down_150_25nt.tsv", header=TRUE, row.names=1)
+mfe_PSS_25nt_up_control <- read.delim("output/RNAfold/mfe_files/mfe_peaks_up_150_25nt_control.tsv", header=TRUE, row.names=1)
+mfe_PSS_25nt_down_control <- read.delim("output/RNAfold/mfe_files/mfe_peaks_down_150_25nt_control.tsv", header=TRUE, row.names=1)
+```
+
+Processing site at position 150.5. When x-axis is labeled from -137.5:137.5, this corresponds to -0
+
+```{r}
+df_mfe_PSS_25nt_quartiles <- data.frame(cbind(ntpos=c(rep(c(-137.5:137.5),2)), mfe_distrib=c(apply(mfe_PSS_25nt_up, 1, median), apply(mfe_PSS_25nt_down, 1, median),apply(mfe_PSS_25nt_up, 1, quantile,probs=0.25), apply(mfe_PSS_25nt_down, 1, quantile,probs=0.25),apply(mfe_PSS_25nt_up, 1,  quantile,probs=0.75), apply(mfe_PSS_25nt_down, 1,  quantile,probs=0.75))))
+df_mfe_PSS_25nt_quartiles$updown <- rep(c(rep("up",276), rep("down", 276)),3)
+df_mfe_PSS_25nt_quartiles$median_quartile <- c(rep("median", 552), rep("1quartile", 552), rep("3quartile",552))
+
+mean_or_median = mean
+df_mfe_PSS_25nt <- data.frame(cbind(ntpos=c(rep(c(-137.5:137.5),4)), mfe=c(apply(mfe_PSS_25nt_up, 1, mean_or_median), apply(mfe_PSS_25nt_down, 1, mean_or_median), apply(mfe_PSS_25nt_up_control, 1, mean_or_median), apply(mfe_PSS_25nt_down_control,1, mean_or_median))))
+df_mfe_PSS_25nt$updown <- rep(c(rep("up",276), rep("down", 276)),2)
+df_mfe_PSS_25nt$control <- c(rep("data", 552), rep("control", 552))
+```
+
+```{r}
+p <- ggplot(data=df_mfe_PSS_25nt, aes(x=ntpos, y=mfe, color=updown)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(aes(linetype=control), size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks", breaks=c("up", "down"), labels=c("rne(WT)", "rne(Ts)")) + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) +ylim(-3.4,-1)
+p
+ggsave("output/RNAfold/figures/deltaG_PSS_25nt_shuffled.pdf", plot=p, width=8, height=7, units="cm")
+
+p <- ggplot(data=df_mfe_PSS_25nt_quartiles, aes(x=ntpos, y=mfe_distrib, color=updown, linetype=median_quartile)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + 
+  scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks", breaks=c("up", "down"), labels=c("rne(WT)", "rne(Ts)")) + 
+  scale_linetype_manual(name="Quartiles",values=c(3,1,3), breaks=c("1quartile", "median", "3quartile"), labels=c("1st", "2nd", "3rd")) +
+  xlab("Distance Relative to Cleavage Site (nt)") + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-5.1,0.1)
+p
+ggsave("output/RNAfold/figures/deltaG_PSS_25nt_quartiles.pdf", plot=p, width=10, height=7, units="cm")
+
+p <- ggplot(data=subset(df_mfe_PSS_25nt, df_mfe_PSS_25nt$control=="data"), aes(x=ntpos, y=mfe, color=updown)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks", breaks=c("up", "down"), labels=c("rne(WT)", "rne(Ts)")) + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) +ylim(-3.4,-1)
+p
+ggsave("output/RNAfold/figures/deltaG_PSS_25nt.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+### Random Sites
+
+```{r}
+# use same amount of random positions
+shuffle_Ranges_perPlasmid <- function(Ranges_object, sequence_object, seed=NULL){
+  set.seed(seed)
+
+  # extract lengths of sequences
+  lengths <- c()
+  for(i in 1:length(sequence_object)){
+    lengths[i] <- width(sequence_object[i])
+  }
+  names(lengths) <- names(sequence_object)
+
+  # initialise new_ranges, end has to be set according to length of plasmids / chromosome
+  new_ranges <- Ranges_object
+  start(new_ranges) <- rep(1, length(new_ranges))
+  
+  # do actual shuffling  
+  for(seq_i in 1:length(lengths)){
+    seq <- names(lengths)[seq_i]
+    indices <- which(seqnames(new_ranges)==seq)
+    # set ends to max possible length to avoid width < 0
+    end(new_ranges[indices]) <- rep(lengths[seq], length(new_ranges[indices]))
+    
+    # create random numbers
+    start(new_ranges[indices]) <- round(runif(length(new_ranges[indices]), 1, lengths[seq]))
+    end(new_ranges[indices]) <- start(new_ranges[indices])
+  }
+  
+  return(new_ranges)
+}
+
+random_all_Ranges <- shuffle_Ranges_perPlasmid(PSS_Ranges, syne_fasta, 42)
+random_up_Ranges <- shuffle_Ranges_perPlasmid(PSS_Ranges_up, syne_fasta, 42)
+random_down_Ranges <- shuffle_Ranges_perPlasmid(PSS_Ranges_down, syne_fasta, 42)
+
+random_all_150 <- extract_RNA_sequences(random_all_Ranges, syne_fasta, 150)
+random_up_150 <- extract_RNA_sequences(random_up_Ranges, syne_fasta, 150)
+random_down_150 <- extract_RNA_sequences(random_down_Ranges, syne_fasta, 150)
+
+writeXStringSet(random_all_150, "output/RNAfold/random_all_peaks_150.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(random_up_150, "output/RNAfold/random_up_150.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(random_down_150, "output/RNAfold/random_down_150.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+```
+
+run from command line (!takes a long time!): 
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/random_up_150.fasta RNAfold/mfe_files/mfe_random_up_150.tsv 50
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/random_down_150.fasta RNAfold/mfe_files/mfe_random_down_150.tsv 50
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/random_all_peaks_150.fasta RNAfold/mfe_files/mfe_random_all_peaks_150.tsv 50
+
+```{r}
+mfe_random_up <- read.delim("output/RNAfold/mfe_files/mfe_random_up_150.tsv", header=TRUE, row.names=1)
+mfe_random_up_control <- read.delim("output/RNAfold/mfe_files/mfe_random_up_150_control.tsv", header=TRUE, row.names=1)
+mfe_random_down <- read.delim("output/RNAfold/mfe_files/mfe_random_down_150.tsv", header=TRUE, row.names=1)
+mfe_random_down_control <- read.delim("output/RNAfold/mfe_files/mfe_random_down_150_control.tsv", header=TRUE, row.names=1)
+```
+
+```{r}
+df_mfe_random_quartiles <- data.frame(cbind(ntpos=c(rep(c(-125:125),2)), mfe_distrib=c(apply(mfe_random_up, 1, median), apply(mfe_random_down, 1, median),apply(mfe_random_up, 1, quantile,probs=0.25), apply(mfe_random_down, 1, quantile,probs=0.25),apply(mfe_random_up, 1,  quantile,probs=0.75), apply(mfe_random_down, 1,  quantile,probs=0.75))))
+df_mfe_random_quartiles$updown <- rep(c(rep("up",251), rep("down", 251)),3)
+df_mfe_random_quartiles$median_quartile <- c(rep("median", 502), rep("1quartile", 502), rep("3quartile",502))
+
+mean_or_median = mean
+df_mfe_random <- data.frame(cbind(ntpos=c(rep(c(-125:125),4)), mfe=c(apply(mfe_random_up, 1, mean_or_median), apply(mfe_random_down, 1, mean_or_median), apply(mfe_random_up_control, 1, mean_or_median), apply(mfe_random_down_control,1, mean_or_median))))
+df_mfe_random$updown <- rep(c(rep("up",251), rep("down", 251)),2)
+df_mfe_random$control <- c(rep("data", 502), rep("control", 502))
+```
+
+Plot with shuffled data and non-shuffled data
+
+```{r}
+p <- ggplot(data=df_mfe_random, aes(x=ntpos, y=mfe, color=updown)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(aes(linetype=control), size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks", breaks=c("up", "down"), labels=c("rne(WT)>Ts", "rne(Ts)>WT")) + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-10,-4.75)
+p
+ggsave("output/RNAfold/figures/deltaG_random_shuffled.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+Plot with quartiles (1st, median, 3rd)
+
+```{r}
+p <- ggplot(data=df_mfe_random_quartiles, aes(x=ntpos, y=mfe_distrib, color=updown, linetype=median_quartile)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + 
+  scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks", breaks=c("up", "down"), labels=c("rne(WT)>Ts", "rne(Ts)>WT")) + 
+  scale_linetype_manual(name="Quartiles",values=c(3,1,3), breaks=c("1quartile", "median", "3quartile"), labels=c("1st", "2nd", "3rd")) +
+  xlab("Distance Relative to Cleavage Site (nt)") + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-14,-2)
+p
+
+ggsave("output/RNAfold/figures/deltaG_random_quartiles.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+```{r}
+p <- ggplot(data=subset(df_mfe_random, df_mfe_PSS$control=="data"), aes(x=ntpos, y=mfe, color=updown)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks", breaks=c("up", "down"), labels=c("rne(WT)>Ts", "rne(Ts)>WT")) + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-10,-4.75)
+p
+
+ggsave("output/RNAfold/figures/deltaG_random.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+run from command line (!takes a long time!): 
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/random_up_150.fasta RNAfold/mfe_files/mfe_random_up_150_25nt.tsv 25
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/random_down_150.fasta RNAfold/mfe_files/mfe_random_down_150_25nt.tsv 25
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/random_all_peaks_150.fasta RNAfold/mfe_files/mfe_all_random_150_25nt.tsv 25
+
+```{r}
+mfe_random_25nt_up <- read.delim("output/RNAfold/mfe_files/mfe_random_up_150_25nt.tsv", header=TRUE, row.names=1)
+mfe_random_25nt_down <- read.delim("output/RNAfold/mfe_files/mfe_random_down_150_25nt.tsv", header=TRUE, row.names=1)
+mfe_random_25nt_up_control <- read.delim("output/RNAfold/mfe_files/mfe_random_up_150_25nt_control.tsv", header=TRUE, row.names=1)
+mfe_random_25nt_down_control <- read.delim("output/RNAfold/mfe_files/mfe_random_down_150_25nt_control.tsv", header=TRUE, row.names=1)
+```
+
+Processing site at position 150.5. When x-axis is labeled from -137.5:137.5, this corresponds to -0
+
+```{r}
+df_mfe_random_25nt_quartiles <- data.frame(cbind(ntpos=c(rep(c(-137.5:137.5),2)), mfe_distrib=c(apply(mfe_random_25nt_up, 1, median), apply(mfe_random_25nt_down, 1, median),apply(mfe_random_25nt_up, 1, quantile,probs=0.25), apply(mfe_random_25nt_down, 1, quantile,probs=0.25),apply(mfe_random_25nt_up, 1,  quantile,probs=0.75), apply(mfe_random_25nt_down, 1,  quantile,probs=0.75))))
+df_mfe_random_25nt_quartiles$updown <- rep(c(rep("up",276), rep("down", 276)),3)
+df_mfe_random_25nt_quartiles$median_quartile <- c(rep("median", 552), rep("1quartile", 552), rep("3quartile",552))
+
+mean_or_median = mean
+df_mfe_random_25nt <- data.frame(cbind(ntpos=c(rep(c(-137.5:137.5),4)), mfe=c(apply(mfe_random_25nt_up, 1, mean_or_median), apply(mfe_random_25nt_down, 1, mean_or_median), apply(mfe_random_25nt_up_control, 1, mean_or_median), apply(mfe_random_25nt_down_control,1, mean_or_median))))
+df_mfe_random_25nt$updown <- rep(c(rep("up",276), rep("down", 276)),2)
+df_mfe_random_25nt$control <- c(rep("data", 552), rep("control", 552))
+```
+
+```{r}
+p <- ggplot(data=df_mfe_random_25nt, aes(x=ntpos, y=mfe, color=updown)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(aes(linetype=control), size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks", breaks=c("up", "down"), labels=c("rne(WT)>Ts", "rne(Ts)>WT")) + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) +ylim(-3.4,-1)
+p
+ggsave("output/RNAfold/figures/deltaG_random_25nt_shuffled.pdf", plot=p, width=10, height=7, units="cm")
+
+p <- ggplot(data=df_mfe_random_25nt_quartiles, aes(x=ntpos, y=mfe_distrib, color=updown, linetype=median_quartile)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + 
+  scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks", breaks=c("up", "down"), labels=c("rne(WT)>Ts", "rne(Ts)>WT")) + 
+  scale_linetype_manual(name="Quartiles",values=c(3,1,3), breaks=c("1quartile", "median", "3quartile"), labels=c("1st", "2nd", "3rd")) +
+  xlab("Distance Relative to Cleavage Site (nt)") + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-5.1,0.1)
+p
+ggsave("output/RNAfold/figures/deltaG_random_25nt_quartiles.pdf", plot=p, width=10, height=7, units="cm")
+
+p <- ggplot(data=subset(df_mfe_random_25nt, df_mfe_random_25nt$control=="data"), aes(x=ntpos, y=mfe, color=updown)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks", breaks=c("up", "down"), labels=c("rne(WT)>Ts", "rne(Ts)>WT")) + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) +ylim(-3.4,-1)
+p
+ggsave("output/RNAfold/figures/deltaG_random_25nt.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+### TUs
+```{r}
+# on plus strand: beginning of feature is start(), on minus strand: beginning of feature is end()
+plus_indices <- which(strand(TUs)=="+")
+minus_indices <- which(strand(TUs)=="-")
+
+TU_starts <- TUs
+end(TU_starts[plus_indices]) <- start(TU_starts[plus_indices])
+start(TU_starts[minus_indices]) <- end(TU_starts[minus_indices])
+
+TU_ends <- TUs
+start(TU_ends[plus_indices]) <- end(TU_ends[plus_indices])
+end(TU_ends[minus_indices]) <- start(TU_ends[minus_indices])
+
+TU_starts_sequences <- extract_RNA_sequences(TU_starts, syne_fasta, 150)
+TU_ends_sequences <- extract_RNA_sequences(TU_ends, syne_fasta, 150)
+
+writeXStringSet(TU_starts_sequences, "output/RNAfold/TU_starts_sequences_150.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(TU_ends_sequences, "output/RNAfold/TU_ends_sequences_150.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+```
+
+run from command line (!takes a long time!): 
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/TU_starts_sequences_150.fasta RNAfold/mfe_files/mfe_TU_starts_sequences_150.tsv 50
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/TU_ends_sequences_150.fasta RNAfold/mfe_files/mfe_TU_ends_sequences_150.tsv 50
+
+```{r}
+mfe_TUs_start <- read.delim("output/RNAfold/mfe_files/mfe_TU_starts_sequences_150.tsv", header=TRUE, row.names=1)
+mfe_TUs_start_control <- read.delim("output/RNAfold/mfe_files/mfe_TU_starts_sequences_150_control.tsv", header=TRUE, row.names=1)
+mfe_TUs_stop <- read.delim("output/RNAfold/mfe_files/mfe_TU_ends_sequences_150.tsv", header=TRUE, row.names=1)
+mfe_TUs_stop_control <- read.delim("output/RNAfold/mfe_files/mfe_TU_ends_sequences_150_control.tsv", header=TRUE, row.names=1)
+```
+
+```{r}
+df_mfe_TUs_quartiles <- data.frame(cbind(ntpos=c(rep(c(-125:125),2)), mfe_distrib=c(apply(mfe_TUs_start, 1, median), apply(mfe_TUs_stop, 1, median),apply(mfe_TUs_start, 1, quantile,probs=0.25), apply(mfe_TUs_stop, 1, quantile,probs=0.25),apply(mfe_TUs_start, 1,  quantile,probs=0.75), apply(mfe_TUs_stop, 1,  quantile,probs=0.75))))
+df_mfe_TUs_quartiles$startstop <- rep(c(rep("start",251), rep("stop", 251)),3)
+df_mfe_TUs_quartiles$median_quartile <- c(rep("median", 502), rep("1quartile", 502), rep("3quartile",502))
+
+mean_or_median = mean
+df_mfe_TUs <- data.frame(cbind(ntpos=c(rep(c(-125:125),4)), mfe=c(apply(mfe_TUs_start, 1, mean_or_median), apply(mfe_TUs_stop, 1, mean_or_median), apply(mfe_TUs_start_control, 1, mean_or_median), apply(mfe_TUs_stop_control,1, mean_or_median))))
+df_mfe_TUs$startstop <- rep(c(rep("start",251), rep("stop", 251)),2)
+df_mfe_TUs$control <- c(rep("data", 502), rep("control", 502))
+```
+
+Plot with shuffled data and non-shuffled data
+
+```{r}
+p <- ggplot(data=df_mfe_TUs, aes(x=ntpos, y=mfe, color=startstop)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(aes(linetype=control), size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("black", "darkgray"), name  ="Position", breaks=c("start", "stop"), labels=c("Start", "End")) + xlab("Distance Relative to Start / Stop position (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-10,-4.75)
+p
+ggsave("output/RNAfold/figures/deltaG_TUs_shuffled.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+Plot with quartiles (1st, median, 3rd)
+
+```{r}
+p <- ggplot(data=df_mfe_TUs_quartiles, aes(x=ntpos, y=mfe_distrib, color=startstop, linetype=median_quartile)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + 
+  scale_color_manual(values=c("black", "darkgray"), name  ="Position", breaks=c("start", "stop"), labels=c("Start", "End")) + 
+  scale_linetype_manual(name="Quartiles",values=c(3,1,3), breaks=c("1quartile", "median", "3quartile"), labels=c("1st", "2nd", "3rd")) +
+  xlab("Distance Relative to Cleavage Site (nt)") + xlab("Distance Relative to Start / Stop position (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-14,-2)
+p
+
+ggsave("output/RNAfold/figures/deltaG_TUs_quartiles.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+```{r}
+p <- ggplot(data=subset(df_mfe_TUs, df_mfe_TUs$control=="data"), aes(x=ntpos, y=mfe, color=startstop)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("black", "darkgray"), name  ="Position", breaks=c("start", "stop"), labels=c("Start", "End")) + xlab("Distance Relative to Start / Stop position (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-10,-4.75)
+p
+
+ggsave("output/RNAfold/figures/deltaG_TUs.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+run from command line (!takes a long time!): 
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/TU_starts_sequences_150.fasta RNAfold/mfe_files/mfe_TU_starts_sequences_150_25nt.tsv 25
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/TU_ends_sequences_150.fasta RNAfold/mfe_files/mfe_TU_ends_sequences_150_25nt.tsv 25
+
+```{r}
+mfe_TUs_25nt_start <- read.delim("output/RNAfold/mfe_files/mfe_TU_starts_sequences_150_25nt.tsv", header=TRUE, row.names=1)
+mfe_TUs_25nt_stop <- read.delim("output/RNAfold/mfe_files/mfe_TU_ends_sequences_150_25nt.tsv", header=TRUE, row.names=1)
+mfe_TUs_25nt_start_control <- read.delim("output/RNAfold/mfe_files/mfe_TU_starts_sequences_150_25nt_control.tsv", header=TRUE, row.names=1)
+mfe_TUs_25nt_stop_control <- read.delim("output/RNAfold/mfe_files/mfe_TU_ends_sequences_150_25nt_control.tsv", header=TRUE, row.names=1)
+```
+
+```{r}
+df_mfe_TUs_25nt_quartiles <- data.frame(cbind(ntpos=c(rep(c(-137.5:137.5),2)), mfe_distrib=c(apply(mfe_TUs_25nt_start, 1, median), apply(mfe_TUs_25nt_stop, 1, median),apply(mfe_TUs_25nt_start, 1, quantile,probs=0.25), apply(mfe_TUs_25nt_stop, 1, quantile,probs=0.25),apply(mfe_TUs_25nt_start, 1,  quantile,probs=0.75), apply(mfe_TUs_25nt_stop, 1,  quantile,probs=0.75))))
+df_mfe_TUs_25nt_quartiles$startstop <- rep(c(rep("start",276), rep("stop", 276)),3)
+df_mfe_TUs_25nt_quartiles$median_quartile <- c(rep("median", 552), rep("1quartile", 552), rep("3quartile",552))
+
+mean_or_median = mean
+df_mfe_TUs_25nt <- data.frame(cbind(ntpos=c(rep(c(-137.5:137.5),4)), mfe=c(apply(mfe_TUs_25nt_start, 1, mean_or_median), apply(mfe_TUs_25nt_stop, 1, mean_or_median), apply(mfe_TUs_25nt_start_control, 1, mean_or_median), apply(mfe_TUs_25nt_stop_control,1, mean_or_median))))
+df_mfe_TUs_25nt$startstop <- rep(c(rep("start",276), rep("stop", 276)),2)
+df_mfe_TUs_25nt$control <- c(rep("data", 552), rep("control", 552))
+```
+
+```{r}
+p <- ggplot(data=df_mfe_TUs_25nt, aes(x=ntpos, y=mfe, color=startstop)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(aes(linetype=control), size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("black", "darkgray"), name  ="Position", breaks=c("start", "stop"), labels=c("Start", "End")) + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) +ylim(-3.4,-1)
+p
+ggsave("output/RNAfold/figures/deltaG_TUs_25nt_shuffled.pdf", plot=p, width=10, height=7, units="cm")
+
+p <- ggplot(data=df_mfe_TUs_25nt_quartiles, aes(x=ntpos, y=mfe_distrib, color=startstop, linetype=median_quartile)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + 
+  scale_color_manual(values=c("black", "darkgray"), name  ="Position", breaks=c("start", "stop"), labels=c("Start", "End")) + 
+  scale_linetype_manual(name="Quartiles",values=c(3,1,3), breaks=c("1quartile", "median", "3quartile"), labels=c("1st", "2nd", "3rd")) +
+  xlab("Distance Relative to Cleavage Site (nt)") + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-5.1,0.1)
+p
+ggsave("output/RNAfold/figures/deltaG_TUs_25nt_quartiles.pdf", plot=p, width=10, height=7, units="cm")
+
+p <- ggplot(data=subset(df_mfe_TUs_25nt, df_mfe_random_25nt$control=="data"), aes(x=ntpos, y=mfe, color=startstop)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("black", "darkgray"), name  ="Position", breaks=c("start", "stop"), labels=c("Start", "End")) + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) +ylim(-3.4,-1)
+p
+ggsave("output/RNAfold/figures/deltaG_TUs_25nt.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+### CDS
+
+```{r}
+# on plus strand: beginning of feature is start(), on minus strand: beginning of feature is end()
+plus_indices <- which(strand(CDS_features)=="+")
+minus_indices <- which(strand(CDS_features)=="-")
+
+CDS_starts <- CDS_features
+end(CDS_starts[plus_indices]) <- start(CDS_starts[plus_indices])
+start(CDS_starts[minus_indices]) <- end(CDS_starts[minus_indices])
+
+CDS_ends <- CDS_features
+start(CDS_ends[plus_indices]) <- end(CDS_ends[plus_indices])
+end(CDS_ends[minus_indices]) <- start(CDS_ends[minus_indices])
+
+CDS_starts_sequences <- extract_RNA_sequences(CDS_starts, syne_fasta, 150)
+CDS_ends_sequences <- extract_RNA_sequences(CDS_ends, syne_fasta, 150)
+
+writeXStringSet(CDS_starts_sequences, "output/RNAfold/CDS_starts_sequences_150.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+writeXStringSet(CDS_ends_sequences, "output/RNAfold/CDS_ends_sequences_150.fasta", append=FALSE,
+                compress=FALSE, compression_level=NA, format="fasta")
+```
+
+run from command line (!takes a long time!): 
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/CDS_starts_sequences_150.fasta RNAfold/mfe_files/mfe_CDS_starts_sequences_150.tsv 50
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/CDS_ends_sequences_150.fasta RNAfold/mfe_files/mfe_CDS_ends_sequences_150.tsv 50
+
+```{r}
+mfe_CDS_start <- read.delim("output/RNAfold/mfe_files/mfe_CDS_starts_sequences_150.tsv", header=TRUE, row.names=1)
+mfe_CDS_start_control <- read.delim("output/RNAfold/mfe_files/mfe_CDS_starts_sequences_150_control.tsv", header=TRUE, row.names=1)
+mfe_CDS_stop <- read.delim("output/RNAfold/mfe_files/mfe_CDS_ends_sequences_150.tsv", header=TRUE, row.names=1)
+mfe_CDS_stop_control <- read.delim("output/RNAfold/mfe_files/mfe_CDS_ends_sequences_150_control.tsv", header=TRUE, row.names=1)
+```
+
+```{r}
+df_mfe_CDS_quartiles <- data.frame(cbind(ntpos=c(rep(c(-125:125),2)), mfe_distrib=c(apply(mfe_CDS_start, 1, median), apply(mfe_CDS_stop, 1, median),apply(mfe_CDS_start, 1, quantile,probs=0.25), apply(mfe_CDS_stop, 1, quantile,probs=0.25),apply(mfe_CDS_start, 1,  quantile,probs=0.75), apply(mfe_CDS_stop, 1,  quantile,probs=0.75))))
+df_mfe_CDS_quartiles$startstop <- rep(c(rep("start",251), rep("stop", 251)),3)
+df_mfe_CDS_quartiles$median_quartile <- c(rep("median", 502), rep("1quartile", 502), rep("3quartile",502))
+
+mean_or_median = mean
+df_mfe_CDS <- data.frame(cbind(ntpos=c(rep(c(-125:125),4)), mfe=c(apply(mfe_CDS_start, 1, mean_or_median), apply(mfe_CDS_stop, 1, mean_or_median), apply(mfe_CDS_start_control, 1, mean_or_median), apply(mfe_CDS_stop_control,1, mean_or_median))))
+df_mfe_CDS$startstop <- rep(c(rep("start",251), rep("stop", 251)),2)
+df_mfe_CDS$control <- c(rep("data", 502), rep("control", 502))
+```
+
+Plot with shuffled data and non-shuffled data
+
+```{r}
+p <- ggplot(data=df_mfe_CDS, aes(x=ntpos, y=mfe, color=startstop)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(aes(linetype=control), size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("black", "darkgray"), name  ="Position", breaks=c("start", "stop"), labels=c("Start", "End")) + xlab("Distance Relative to Start / Stop position (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-10,-4.75)
+p
+ggsave("output/RNAfold/figures/deltaG_CDS_shuffled.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+Plot with quartiles (1st, median, 3rd)
+
+```{r}
+p <- ggplot(data=df_mfe_CDS_quartiles, aes(x=ntpos, y=mfe_distrib, color=startstop, linetype=median_quartile)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + 
+  scale_color_manual(values=c("black", "darkgray"), name  ="Position", breaks=c("start", "stop"), labels=c("Start", "End")) + 
+  scale_linetype_manual(name="Quartiles",values=c(3,1,3), breaks=c("1quartile", "median", "3quartile"), labels=c("1st", "2nd", "3rd")) +
+  xlab("Distance Relative to Start / Stop position (nt)") + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-14,-2)
+p
+
+ggsave("output/RNAfold/figures/deltaG_CDS_quartiles.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+```{r}
+p <- ggplot(data=subset(df_mfe_CDS, df_mfe_CDS$control=="data"), aes(x=ntpos, y=mfe, color=startstop)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("black", "darkgray"), name  ="Position", breaks=c("start", "stop"), labels=c("Start", "End")) + xlab("Distance Relative to Start / Stop position (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-10,-4.75)
+p
+
+ggsave("output/RNAfold/figures/deltaG_CDS.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+run from command line (!takes a long time!): 
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/CDS_starts_sequences_150.fasta RNAfold/mfe_files/mfe_CDS_starts_sequences_150_25nt.tsv 25
+python RNAfold/RNAfold_inputFasta_outputMfeTable.py RNAfold/CDS_ends_sequences_150.fasta RNAfold/mfe_files/mfe_CDS_ends_sequences_150_25nt.tsv 25
+
+```{r}
+mfe_CDS_25nt_start <- read.delim("output/RNAfold/mfe_files/mfe_CDS_starts_sequences_150_25nt.tsv", header=TRUE, row.names=1)
+mfe_CDS_25nt_stop <- read.delim("output/RNAfold/mfe_files/mfe_CDS_ends_sequences_150_25nt.tsv", header=TRUE, row.names=1)
+mfe_CDS_25nt_start_control <- read.delim("output/RNAfold/mfe_files/mfe_CDS_starts_sequences_150_25nt_control.tsv", header=TRUE, row.names=1)
+mfe_CDS_25nt_stop_control <- read.delim("output/RNAfold/mfe_files/mfe_CDS_ends_sequences_150_25nt_control.tsv", header=TRUE, row.names=1)
+```
+
+```{r}
+df_mfe_CDS_25nt_quartiles <- data.frame(cbind(ntpos=c(rep(c(-137.5:137.5),2)), mfe_distrib=c(apply(mfe_CDS_25nt_start, 1, median), apply(mfe_CDS_25nt_stop, 1, median),apply(mfe_CDS_25nt_start, 1, quantile,probs=0.25), apply(mfe_CDS_25nt_stop, 1, quantile,probs=0.25),apply(mfe_CDS_25nt_start, 1,  quantile,probs=0.75), apply(mfe_CDS_25nt_stop, 1,  quantile,probs=0.75))))
+df_mfe_CDS_25nt_quartiles$startstop <- rep(c(rep("start",276), rep("stop", 276)),3)
+df_mfe_CDS_25nt_quartiles$median_quartile <- c(rep("median", 552), rep("1quartile", 552), rep("3quartile",552))
+
+mean_or_median = mean
+df_mfe_CDS_25nt <- data.frame(cbind(ntpos=c(rep(c(-137.5:137.5),4)), mfe=c(apply(mfe_CDS_25nt_start, 1, mean_or_median), apply(mfe_CDS_25nt_stop, 1, mean_or_median), apply(mfe_CDS_25nt_start_control, 1, mean_or_median), apply(mfe_CDS_25nt_stop_control,1, mean_or_median))))
+df_mfe_CDS_25nt$startstop <- rep(c(rep("start",276), rep("stop", 276)),2)
+df_mfe_CDS_25nt$control <- c(rep("data", 552), rep("control", 552))
+```
+
+```{r}
+p <- ggplot(data=df_mfe_CDS_25nt, aes(x=ntpos, y=mfe, color=startstop)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(aes(linetype=control), size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("black", "darkgray"), name  ="Position", breaks=c("start", "stop"), labels=c("Start", "End")) + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) +ylim(-3.4,-1)
+p
+ggsave("output/RNAfold/figures/deltaG_CDS_25nt_shuffled.pdf", plot=p, width=10, height=7, units="cm")
+
+p <- ggplot(data=df_mfe_CDS_25nt_quartiles, aes(x=ntpos, y=mfe_distrib, color=startstop, linetype=median_quartile)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + 
+  scale_color_manual(values=c("black", "darkgray"), name  ="Position", breaks=c("start", "stop"), labels=c("Start", "End")) + 
+  scale_linetype_manual(name="Quartiles",values=c(3,1,3), breaks=c("1quartile", "median", "3quartile"), labels=c("1st", "2nd", "3rd")) +
+  xlab("Distance Relative to Cleavage Site (nt)") + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) + ylim(-5.1,0.1)
+p
+ggsave("output/RNAfold/figures/deltaG_CDS_25nt_quartiles.pdf", plot=p, width=10, height=7, units="cm")
+
+p <- ggplot(data=subset(df_mfe_CDS_25nt, df_mfe_random_25nt$control=="data"), aes(x=ntpos, y=mfe, color=startstop)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("black", "darkgray"), name  ="Position", breaks=c("start", "stop"), labels=c("Start", "End")) + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) +ylim(-3.4,-1)
+p
+ggsave("output/RNAfold/figures/deltaG_CDS_25nt.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+## For AU content, ACGU content
+
+Check for nucleotide content around processing sites, compare between different sets of processing sites.
+
+```{r}
+length_up_down <- 50
+peaks_all <- extract_RNA_sequences(PSS_Ranges, syne_fasta, length_up_down)
+peaks_up <- extract_RNA_sequences(PSS_Ranges_up, syne_fasta, length_up_down)
+peaks_down <- extract_RNA_sequences(PSS_Ranges_down, syne_fasta, length_up_down)
+
+cons_mat <- consensusMatrix(peaks_up)
+perc_AU_up <- (cons_mat[1,]+cons_mat[4,])/apply(cons_mat[1:4,], 2,sum)
+df_perc_ACGU_up <- data.frame(cons_mat[1:4,])/sum(cons_mat[,1])*100
+df_perc_ACGU_up <- data.frame(cbind(ntpos=c(-length_up_down:-1,1:length_up_down), t(df_perc_ACGU_up)))
+df_perc_AU_up <- df_perc_ACGU_up[,c(1,2,5)]
+df_perc_CG_up <- df_perc_ACGU_up[,c(1,3,4)]
+df_perc_ACGU_up <- pivot_longer(df_perc_ACGU_up, 2:5)
+df_perc_AU_up <- pivot_longer(df_perc_AU_up, 2:3)
+df_perc_CG_up <- pivot_longer(df_perc_CG_up, 2:3)
+
+cons_mat <- consensusMatrix(peaks_down)
+perc_AU_down <- (cons_mat[1,]+cons_mat[4,])/apply(cons_mat[1:4,], 2,sum)
+df_perc_ACGU_down <- data.frame(cons_mat[1:4,])/sum(cons_mat[,1])*100
+df_perc_ACGU_down <- data.frame(cbind(ntpos=c(-length_up_down:-1,1:length_up_down), t(df_perc_ACGU_down)))
+df_perc_AU_down <- df_perc_ACGU_down[,c(1,2,5)]
+df_perc_CG_down <- df_perc_ACGU_down[,c(1,3,4)]
+df_perc_ACGU_down <- pivot_longer(df_perc_ACGU_down, 2:5)
+df_perc_AU_down <- pivot_longer(df_perc_AU_down, 2:3)
+df_perc_CG_down <- pivot_longer(df_perc_CG_down, 2:3)
+
+df_percAU <- data.frame(cbind(ntpos=rep(c(-length_up_down:-1,1:length_up_down),2),percAU=c(perc_AU_up, perc_AU_down)*100))
+df_percAU$updown <- c(rep("up",2*length_up_down), rep("down", 2*length_up_down))
+
+general_AU <- (sum(oligonucleotideFrequency(syne_fasta, width=1)[,c(1,4)])/sum(oligonucleotideFrequency(syne_fasta, width=1)))*100
+
+ACGU_colors <- palette_OkabeIto[c(3,1,5,6)]
+names(ACGU_colors) <- c("U", "G", "C", "A")
+```
+
+Compare AU content between peak positions which are either up- or downregulated
+
+```{r}
+p <- ggplot(data=df_percAU, aes(x=ntpos, y=percAU, color=updown)) + geom_hline(aes(yintercept=general_AU), color="darkgray", linetype=2) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=.5) + theme_light() + 
+  scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks",
+                           breaks=c("up", "down"),
+                           labels=c("rne(WT)>rne(Ts)", "rne(Ts)>rne(WT)")) + xlab("Distance Relative to Cleavage Site (nt)") + ylab("Percentage AU (%)")
+  
+p <- p + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5))
+
+ggsave("output/nt_content_plots/AUcontent.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+Code for disinguishing nts:
+
+```{r}
+p <- ggplot(data=df_perc_ACGU_up, aes(x=ntpos, y=value, color=name)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + scale_color_manual(name="nt", values=ACGU_colors)+ xlab("Distance Relative to Cleavage Site (nt)") + ylab("Percentage ACGU (%)") + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) +ylim(5,72)+xlim(-25,+25)
+p
+ggsave("output/nt_content_plots/ACGU_up_content.pdf", plot=p, width=10, height=7, units="cm")
+
+p <- ggplot(data=df_perc_ACGU_down, aes(x=ntpos, y=value, color=name)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=.5) + theme_light() + scale_color_manual(name="nt", values=ACGU_colors)+ xlab("Distance Relative to Cleavage Site (nt)") + ylab("Percentage ACGU (%)") + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5))+ylim(5,72)+xlim(-25,+25)
+p
+ggsave("output/nt_content_plots/ACGU_down_content.pdf", plot=p, width=10, height=7, units="cm")
+```
+
+```{r, echo=FALSE}
+save.image(file = "furtherAnalyses.RData")
+```
+```{r, echo=FALSE}
+#load("furtherAnalyses.RData")
+```
+
+# Session info {.unnumbered}
+
+```{r sessionInfo, echo=FALSE}
+sessionInfo()
+```
+
+# References {.unnumbered}

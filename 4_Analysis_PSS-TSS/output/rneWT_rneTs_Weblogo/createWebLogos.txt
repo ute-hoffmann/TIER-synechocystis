@@ -1,0 +1,6 @@
+weblogo -f peaks_up_5upDownstream.fasta -o peaks_up_5upDownstream.pdf -F pdf -A 'rna' --annotate "-5,-4,-3,-2,-1,+1,+2,+3,+4,+5" -c "classic" -s large --ylabel "Bits" --xlabel "Distance to Cleavage Site (nt)" --composition 0.474
+weblogo -f peaks_down_5upDownstream.fasta -o weblogo_PSS_peaks_down.pdf -F pdf -A 'rna' --annotate "-5,-4,-3,-2,-1,+1,+2,+3,+4,+5" -c "classic" -s large --ylabel "Bits" --xlabel "Distance to Cleavage Site (nt)" --composition 0.474
+
+weblogo -f peaks_up_5upDownstream.fasta -o weblogo_PSS_peaks_up_max1.pdf -F pdf -A 'rna' --annotate "-5,-4,-3,-2,-1,+1,+2,+3,+4,+5" -c "classic" -s large --ylabel "Bits" --xlabel "Distance to Cleavage Site (nt)" --composition 0.474 -S 1
+weblogo -f peaks_down_5upDownstream.fasta -o weblogo_PSS_peaks_down_max1.pdf -F pdf -A 'rna' --annotate "-5,-4,-3,-2,-1,+1,+2,+3,+4,+5" -c "classic" -s large --ylabel "Bits" --xlabel "Distance to Cleavage Site (nt)" --composition 0.474 -S 1
+
