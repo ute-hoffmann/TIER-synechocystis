@@ -2062,7 +2062,7 @@ df_mfe_PSS_25nt$control <- c(rep("data", 552), rep("control", 552))
 ```{r}
 p <- ggplot(data=df_mfe_PSS_25nt, aes(x=ntpos, y=mfe, color=updown)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(aes(linetype=control), size=0.5) + theme_light() + scale_linetype_manual(values=c(4,1), name="Control", breaks=c("control", "data"), labels=c("shuffled", "data")) + scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks", breaks=c("up", "down"), labels=c("rne(WT)", "rne(Ts)")) + xlab("Distance Relative to Cleavage Site (nt)") + ylab(expression(Delta*"G")) + theme(legend.justification=c(1,1), legend.position=c(0.95,0.95), legend.background = element_rect(colour="gray", linetype="solid", fill="white", size=.5)) +ylim(-3.4,-1)
 p
-ggsave("output/RNAfold/figures/deltaG_PSS_25nt_shuffled.pdf", plot=p, width=8, height=7, units="cm")
+ggsave("output/RNAfold/figures/deltaG_PSS_25nt_shuffled.pdf", plot=p, width=10, height=7, units="cm")
 
 p <- ggplot(data=df_mfe_PSS_25nt_quartiles, aes(x=ntpos, y=mfe_distrib, color=updown, linetype=median_quartile)) + geom_vline(aes(xintercept=0), linetype=2, color="darkgray") + geom_line(size=0.5) + theme_light() + 
   scale_color_manual(values=c("#005a96ff", "#e69f00ff"), name  ="Peaks", breaks=c("up", "down"), labels=c("rne(WT)", "rne(Ts)")) + 
