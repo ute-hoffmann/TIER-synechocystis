@@ -1,137 +1,127 @@
+slr1146,sml0011	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr1146,sml0011	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll5132,sll5057	was not identified. Printed NA
+	was not identified. Printed NA
+sll5132,sll5063	was not identified. Printed NA
+slr1146,sml0011	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr2046,slr2047_5'UTR	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr1146,sml0011	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr1146,sml0011	was not identified. Printed NA
+	was not identified. Printed NA
+slr2046,slr2047_5'UTR	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7075	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll5132,sll5060	was not identified. Printed NA
+slr6110,ssr6089	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr6110,ssr6030	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 sll5132,sll5042	was not identified. Printed NA
-sll5132,sll5042	was not identified. Printed NA
-sll5132,sll5042	was not identified. Printed NA
-sll5132,sll5043	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
 sll5132,sll5046	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
-sll5132,sll5057	was not identified. Printed NA
-sll5132,sll5057	was not identified. Printed NA
-sll5132,sll5060	was not identified. Printed NA
-sll5132,sll5063	was not identified. Printed NA
 	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-sll7106,sll7047	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-sll7106,sll7062	was not identified. Printed NA
-sll7106,sll7062	was not identified. Printed NA
-sll7106,sll7062	was not identified. Printed NA
-sll7106,sll7062	was not identified. Printed NA
-sll7106,sll7062	was not identified. Printed NA
-sll7106,sll7063	was not identified. Printed NA
-sll7106,sll7063	was not identified. Printed NA
-sll7106,sll7063	was not identified. Printed NA
-sll7106,sll7063	was not identified. Printed NA
-sll7106,sll7063	was not identified. Printed NA
-sll7106,sll7063	was not identified. Printed NA
-sll7106,sll7063	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-sll7106,sll7064	was not identified. Printed NA
-sll7106,sll7064	was not identified. Printed NA
-sll7106,sll7064	was not identified. Printed NA
-sll7106,sll7065	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7066	was not identified. Printed NA
-sll7106,sll7067	was not identified. Printed NA
-sll7106,sll7067	was not identified. Printed NA
-sll7106,sll7067	was not identified. Printed NA
-sll7106,sll7067	was not identified. Printed NA
-sll7106,sll7067	was not identified. Printed NA
-sll7106,sll7067	was not identified. Printed NA
-sll7106,sll7067	was not identified. Printed NA
-sll7106,sll7067	was not identified. Printed NA
-sll7106,sll7067	was not identified. Printed NA
-sll7106,sll7067	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-sll7106,sll7075	was not identified. Printed NA
-sll7106,sll7075	was not identified. Printed NA
-sll7106,sll7075	was not identified. Printed NA
-sll7106,sll7075	was not identified. Printed NA
-sll7106,sll7075	was not identified. Printed NA
-sll7106,sll7075	was not identified. Printed NA
-sll7106,sll7075	was not identified. Printed NA
-sll7106,sll7075	was not identified. Printed NA
-sll7106,sll7075	was not identified. Printed NA
-sll7106,sll7075	was not identified. Printed NA
-	was not identified. Printed NA
-sll7106,sll7085	was not identified. Printed NA
-sll7106,sll7089	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll7106,sll7090	was not identified. Printed NA
-sll8049,sll8049-1	was not identified. Printed NA
-slr6110,slr6110-1	was not identified. Printed NA
-slr6110,ssr6030	was not identified. Printed NA
-	was not identified. Printed NA
-slr6110,ssr6030	was not identified. Printed NA
-slr6110,ssr6030	was not identified. Printed NA
-slr6110,ssr6030	was not identified. Printed NA
-slr6110,ssr6030	was not identified. Printed NA
-slr6110,ssr6030	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
+sll1994a,ssl3803	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
@@ -140,55 +130,400 @@ slr6110,slr6047	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+sll5132,sll5042	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7075	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll1994a,ssl3803	was not identified. Printed NA
+sll5132,sll5043	was not identified. Printed NA
+sll7106,sll7067	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll0401-as2,sll0401-as	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll1994a,ssl3803	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+sll7106,sll7047	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr1146,sml0011	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+ssl1762,ssl1762_5'UTR	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7063	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr6110,ssr6030	was not identified. Printed NA
+slr6110,slr6100	was not identified. Printed NA
+sll5132,sll5057	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7075	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll5132,sll5042	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr6110,ssr6030	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+sll7106,sll7067	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7089	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7067	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
+ssl1762,ssl1762_5'UTR	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr6110,ssr6030	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr6110,ssr6030	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+	was not identified. Printed NA
+slr0654,slr0655_5'UTR	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7075	was not identified. Printed NA
+sll7106,sll7067	was not identified. Printed NA
+sll7106,sll7067	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr1146,sml0011	was not identified. Printed NA
+sll7106,sll7063	was not identified. Printed NA
+	was not identified. Printed NA
+ssl1762,ssl1762_5'UTR	was not identified. Printed NA
+	was not identified. Printed NA
+slr1146,sml0011	was not identified. Printed NA
+ssl1762,ssl1762_5'UTR	was not identified. Printed NA
+slr1146,sml0011	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr1146,sml0011	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7067	was not identified. Printed NA
+sll1994a,ssl3803	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+slr0320-as,slr0320-as2,slr0320-as3,sll0306	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7075	was not identified. Printed NA
+slr1930,slr1931_5'UTR	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll8049,sll8049-1	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr6110,slr6110-1	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr6110,ssr6089	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7063	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7075	was not identified. Printed NA
+slr1469,slr1470_5'UTR	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7062	was not identified. Printed NA
+slr1146,sml0011	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+slr1146,sml0011	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7067	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7064	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7062	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+	was not identified. Printed NA
+sll1091,ssl1091_5'UTR	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 slr6110,ssr6089	was not identified. Printed NA
-slr6110,ssr6089	was not identified. Printed NA
-slr6110,ssr6089	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+slr1146,sml0011	was not identified. Printed NA
 	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7075	was not identified. Printed NA
 	was not identified. Printed NA
 slr6110,slr6090	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-slr6110,slr6100	was not identified. Printed NA
-slr6110,slr6102	was not identified. Printed NA
+slr0320-as,slr0320-as2,slr0320-as3	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
+sll7106,sll7075	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+slr1930,slr1931_5'UTR	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7062	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
+	was not identified. Printed NA
+	was not identified. Printed NA
+sll7106,sll7063	was not identified. Printed NA
+	was not identified. Printed NA
+ssl2999,ssl2999_5'UTR	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+sll7106,sll7063	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+sll7106,sll7085	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
@@ -207,24 +542,28 @@ slr0261-as,slr0261-as2	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
+sll7106,sll7062	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+sll7106,sll7075	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+sll7106,sll7064	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+slr6110,slr6102	was not identified. Printed NA
+sll7106,sll7067	was not identified. Printed NA
 	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
 	was not identified. Printed NA
-sll1994a,ssl3803	was not identified. Printed NA
-sll1994a,ssl3803	was not identified. Printed NA
-sll1994a,ssl3803	was not identified. Printed NA
-sll1994a,ssl3803	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
@@ -232,318 +571,43 @@ sll1994a,ssl3803	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-slr1469,slr1470_5'UTR	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-sll1091,ssl1091_5'UTR	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-ssl1762,ssl1762_5'UTR	was not identified. Printed NA
-ssl1762,ssl1762_5'UTR	was not identified. Printed NA
-ssl1762,ssl1762_5'UTR	was not identified. Printed NA
-ssl1762,ssl1762_5'UTR	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA
 ssl1762,ssl1762_5'UTR	was not identified. Printed NA
 	was not identified. Printed NA
+sll7106,sll7075	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+slr6110,ssr6030	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-slr1930,slr1931_5'UTR	was not identified. Printed NA
-slr1930,slr1931_5'UTR	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-slr0320-as,slr0320-as2,slr0320-as3	was not identified. Printed NA
-	was not identified. Printed NA
-slr0320-as,slr0320-as2,slr0320-as3,sll0306	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-sll0401-as2,sll0401-as	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
+sll7106,sll7063	was not identified. Printed NA
 	was not identified. Printed NA
 ssl2380,sll1194	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+slr1146,sml0011	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+sll7106,sll7063	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+sll7106,sll7067	was not identified. Printed NA
 	was not identified. Printed NA
+sll7106,sll7066	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-slr0654,slr0655_5'UTR	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-ssl2999,ssl2999_5'UTR	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-slr2046,slr2047_5'UTR	was not identified. Printed NA
-slr2046,slr2047_5'UTR	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
+sll7106,sll7065	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
@@ -560,20 +624,6 @@ slr2046,slr2047_5'UTR	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 slr1146,sml0011	was not identified. Printed NA
-slr1146,sml0011	was not identified. Printed NA
-slr1146,sml0011	was not identified. Printed NA
-slr1146,sml0011	was not identified. Printed NA
-slr1146,sml0011	was not identified. Printed NA
-slr1146,sml0011	was not identified. Printed NA
-slr1146,sml0011	was not identified. Printed NA
-slr1146,sml0011	was not identified. Printed NA
-slr1146,sml0011	was not identified. Printed NA
-slr1146,sml0011	was not identified. Printed NA
-slr1146,sml0011	was not identified. Printed NA
-slr1146,sml0011	was not identified. Printed NA
-slr1146,sml0011	was not identified. Printed NA
-slr1146,sml0011	was not identified. Printed NA
-slr1146,sml0011	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
@@ -583,6 +633,7 @@ slr1146,sml0011	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+sll7106,sll7062	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
@@ -590,61 +641,10 @@ slr1146,sml0011	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
+sll7106,sll7067	was not identified. Printed NA
+sll7106,sll7064	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
 	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
-	was not identified. Printed NA
+sll7106,sll7090	was not identified. Printed NA

@@ -767,6 +767,7 @@ p
 ```{r}
 p <- gseaplot2(features_gsea_1h, geneSetID=1:2)
 p
+ggsave("output/enrichment/Plots/dWT_dIF_1h_RNAfeatures.pdf", plot=p, width=15, height=12, units="cm")
 ```
 
 ## GSEA for base means
