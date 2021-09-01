@@ -1,6 +1,6 @@
 ##gff-version 1
 ##source-version rtracklayer 1.50.0
-##date 2021-07-20
+##date 2021-08-06
 AP006585.1	rtracklayer	TSS	104362	104362	.	-	.	AP006585.1
 AP006585.1	rtracklayer	TSS	104534	104534	.	+	.	AP006585.1
 AP006585.1	rtracklayer	TSS	104809	104809	.	+	.	AP006585.1

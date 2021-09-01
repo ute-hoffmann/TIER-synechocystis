@@ -1,0 +1,92 @@
+---
+title: "Analyze transcript data of TIER-Seq data for Synechocystis RNase E II"
+author:
+- affiliation: AG Annegret Wilde, Institute of Biology III
+  name: "Ute Hoffmann"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    fig_width: 15
+    fig_height: 8
+    theme: united
+    toc: yes
+    number_sections: true
+  pdf_document:
+    toc: yes
+    number_sections: true
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+require("knitr")
+opts_knit$set(root.dir = "/data/Dokumente/uni/Doktorarbeit/20201010_TIER-Seq_Data/00_Manuscript/Code_final/3_Analysis_Transcript/")
+library(ggplot2)
+library(clusterProfiler)
+library(enrichplot)
+library(rtracklayer)
+library(GenomicRanges)
+```
+
+# Aim of the analysis
+
+Additional analysis, primarily to identify impact of *rne*(WT) and *rne*(Ts) on plasmid copy number.
+
+Load output of primary analysis:
+
+```{r load-input}
+load("DESeq2_analyses_CDS_TUs.RData")
+```
+
+# GSEA for plasmids
+
+First, a data frame in which feature names are assigned to their feature type (CDS, ncRNA, ...) has to be created and the respective info read in.
+
+```{r}
+TUs <- rtracklayer::import("input/Kopf_4091_TUs_combined.gff3")
+df_plasmid <- data.frame(plasmid=as.character(seqnames(TUs)), TU_ID=TUs$index)
+
+plasmid_gsea <- function(DESEq2_dataframe, write=FALSE, path=""){
+  TU_IDs <- row.names(DESEq2_dataframe)
+  geneList <- DESEq2_dataframe$log2FoldChange
+  names(geneList) <- TU_IDs
+  geneList = sort(geneList, decreasing = TRUE)
+  
+  set.seed(42)
+  go_gsea_object <- GSEA(geneList, TERM2GENE = df_plasmid, seed=TRUE)
+  
+  if(write){
+    write.csv(go_gsea_object, path)
+  }
+  return(go_gsea_object)
+}
+
+plasmid_gsea_dWT_dIF_0h <- plasmid_gsea(TUs_result_dWT_dIF_0h, TRUE, "output/enrichment/gsea_plasmids/GSEA_plasmids_dWT-dIF_0h.csv")
+plasmid_gsea_dWT_dIF_1h <- plasmid_gsea(TUs_result_dWT_dIF_1h, TRUE, "output/enrichment/gsea_plasmids/GSEA_plasmids_dWT-dIF_1h.csv")
+plasmid_gsea_dWT <- plasmid_gsea(TUs_result_dWT, TRUE, "output/enrichment/gsea_plasmids/GSEA_plasmids_dWT.csv")
+plasmid_gsea_dIF <- plasmid_gsea(TUs_result_dIF, TRUE, "output/enrichment/gsea_plasmids/GSEA_plasmids_dWT.csv")
+```
+
+```{r}
+print(head(plasmid_gsea_dWT_dIF_0h)[,1:10])
+p <- gseaplot2(plasmid_gsea_dWT_dIF_0h, geneSetID=1:4)
+p
+ggsave("output/enrichment/Plots/dWT_dIF_0h_plasmids.pdf", plot=p, width=15, height=12, units="cm")
+```
+```{r}
+print(head(plasmid_gsea_dWT_dIF_1h)[,1:10])
+p <- gseaplot2(plasmid_gsea_dWT_dIF_1h, geneSetID=1:4)
+p
+ggsave("output/enrichment/Plots/dWT_dIF_1h_plasmids.pdf", plot=p, width=15, height=12, units="cm")
+```
+
+```{r}
+print(head(plasmid_gsea_dIF)[,1:10])
+p <- gseaplot2(plasmid_gsea_dIF, geneSetID=1)
+p
+ggsave("output/enrichment/Plots/dIF_plasmids.pdf", plot=p, width=15, height=12, units="cm")
+```
+
+# Session info {.unnumbered}
+
+```{r sessionInfo, echo=FALSE}
+sessionInfo()
+```
